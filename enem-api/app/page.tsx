@@ -38,11 +38,18 @@ export default async function Home() {
                         leis, decretos, regulamentos, decisões judiciais e
                         outros atos oficiais&quot;.
                     </p>
-                    <a href="https://docs.enem.dev">
-                        <CtaButton className="flex items-center justify-center space-x-2 bg-white text-sm text-black dark:bg-black dark:text-white">
-                            Ler documentação
-                        </CtaButton>
-                    </a>
+                    <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
+                        <a href="/simulado">
+                            <CtaButton className="flex items-center justify-center space-x-2 bg-blue-600 text-sm text-white hover:bg-blue-700">
+                                Fazer Simulado
+                            </CtaButton>
+                        </a>
+                        <a href="https://docs.enem.dev">
+                            <CtaButton className="flex items-center justify-center space-x-2 bg-white text-sm text-black dark:bg-black dark:text-white">
+                                Ler documentação
+                            </CtaButton>
+                        </a>
+                    </div>
                 </div>
             </div>
         </main>
