@@ -7,6 +7,7 @@ import {
     DISCIPLINE_LABELS,
     type SimuladoSession,
     type SimuladoQuestion,
+    type Discipline,
 } from '@/lib/simulado/types';
 import {
     loadSession,
@@ -15,12 +16,21 @@ import {
     markQuestionsAsSeen,
     clearSession,
 } from '@/lib/simulado/storage';
+import { AppleNav, NavBackBtn, ScoreRing } from '../_ui';
+
+const DISC_COLOR: Record<Discipline, string> = {
+    'ciencias-humanas': '#FF6B35',
+    'ciencias-natureza': '#34C759',
+    linguagens: '#007AFF',
+    matematica: '#AF52DE',
+};
 
 export default function SimuladoSessionPage() {
     const router = useRouter();
     const [session, setSession] = useState<SimuladoSession | null>(null);
     const [currentIdx, setCurrentIdx] = useState(0);
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
+    const [showCard, setShowCard] = useState(false);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
@@ -54,10 +64,11 @@ export default function SimuladoSessionPage() {
     const handleAnswer = useCallback(
         (questionId: string, letter: string) => {
             if (!session) return;
-            const revealMode = session.config.revealMode;
-            const alreadyAnswered = session.answers[questionId];
-            if (revealMode === 'immediate' && alreadyAnswered) return;
-
+            if (
+                session.config.revealMode === 'immediate' &&
+                session.answers[questionId]
+            )
+                return;
             const updated: SimuladoSession = {
                 ...session,
                 answers: { ...session.answers, [questionId]: letter },
@@ -71,12 +82,10 @@ export default function SimuladoSessionPage() {
     const handleFinish = useCallback(() => {
         if (!session) return;
         if (timerRef.current) clearTimeout(timerRef.current);
-
         const finished: SimuladoSession = {
             ...session,
             finishedAt: new Date().toISOString(),
         };
-
         markQuestionsAsSeen(session.questions.map(q => q.id));
         saveResult(finished);
         clearSession();
@@ -86,8 +95,16 @@ export default function SimuladoSessionPage() {
 
     if (!session) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-neutral-950">
-                <p className="text-gray-400">Carregando...</p>
+            <div
+                className="flex min-h-screen items-center justify-center"
+                style={{ background: 'var(--sys-bg)' }}
+            >
+                <div
+                    className="text-[15px]"
+                    style={{ color: 'var(--secondary-label)' }}
+                >
+                    Carregando…
+                </div>
             </div>
         );
     }
@@ -95,183 +112,383 @@ export default function SimuladoSessionPage() {
     const questions = session.questions;
     const current = questions[currentIdx];
     const answered = Object.keys(session.answers).length;
+    const progress = (currentIdx + 1) / questions.length;
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-neutral-950 flex flex-col">
-            {/* Top bar */}
-            <header className="bg-white dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800 px-4 py-3 flex items-center justify-between gap-4 sticky top-0 z-10">
-                <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-sm font-medium text-gray-500 dark:text-gray-400 shrink-0">
-                        {currentIdx + 1}/{questions.length}
-                    </span>
-                    <div className="flex-1 h-2 bg-gray-200 dark:bg-neutral-700 rounded-full min-w-[80px]">
-                        <div
-                            className="h-2 bg-blue-600 rounded-full transition-all"
-                            style={{
-                                width: `${((currentIdx + 1) / questions.length) * 100}%`,
-                            }}
-                        />
+        <div
+            className="flex min-h-screen flex-col"
+            style={{ background: 'var(--sys-bg)' }}
+        >
+            {/* Nav */}
+            <AppleNav
+                title={
+                    <div className="flex flex-col items-center">
+                        <span
+                            className="text-[17px] font-semibold"
+                            style={{ color: 'var(--label)' }}
+                        >
+                            {currentIdx + 1} / {questions.length}
+                        </span>
+                        <span
+                            className="text-[11px]"
+                            style={{ color: 'var(--secondary-label)' }}
+                        >
+                            {answered} respondidas
+                        </span>
                     </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                    {timeLeft !== null && (
-                        <TimerBadge seconds={timeLeft} />
-                    )}
-                    <button
-                        type="button"
+                }
+                left={
+                    <NavBackBtn
+                        label="Config"
                         onClick={() => {
                             if (
-                                confirm(
-                                    'Tem certeza que deseja finalizar o simulado?',
+                                window.confirm(
+                                    'Sair do simulado? O progresso será perdido.',
                                 )
-                            )
-                                handleFinish();
+                            ) {
+                                clearSession();
+                                router.push('/simulado');
+                            }
                         }}
-                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
-                    >
-                        Finalizar
-                    </button>
-                </div>
-            </header>
-
-            <div className="flex flex-1 overflow-hidden">
-                {/* Question area */}
-                <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-                    <QuestionCard
-                        question={current}
-                        selectedAnswer={session.answers[current.id] ?? null}
-                        revealMode={session.config.revealMode}
-                        onAnswer={letter => handleAnswer(current.id, letter)}
                     />
-
-                    {/* Navigation */}
-                    <div className="flex justify-between mt-6">
+                }
+                right={
+                    <div className="flex items-center gap-3">
+                        {timeLeft !== null && (
+                            <TimerDisplay seconds={timeLeft} />
+                        )}
                         <button
                             type="button"
-                            onClick={() =>
-                                setCurrentIdx(i => Math.max(0, i - 1))
-                            }
-                            disabled={currentIdx === 0}
-                            className="px-4 py-2 rounded-lg border border-gray-300 dark:border-neutral-700 text-sm font-medium disabled:opacity-40 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors text-gray-700 dark:text-gray-300"
+                            onClick={() => setShowCard(c => !c)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full lg:hidden"
+                            style={{ background: 'var(--seg-bg)' }}
+                            title="Cartão de respostas"
                         >
-                            ← Anterior
+                            <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                            >
+                                <rect
+                                    x="1"
+                                    y="1"
+                                    width="6"
+                                    height="6"
+                                    rx="1.5"
+                                    fill="var(--secondary-label)"
+                                />
+                                <rect
+                                    x="9"
+                                    y="1"
+                                    width="6"
+                                    height="6"
+                                    rx="1.5"
+                                    fill="var(--secondary-label)"
+                                />
+                                <rect
+                                    x="1"
+                                    y="9"
+                                    width="6"
+                                    height="6"
+                                    rx="1.5"
+                                    fill="var(--secondary-label)"
+                                />
+                                <rect
+                                    x="9"
+                                    y="9"
+                                    width="6"
+                                    height="6"
+                                    rx="1.5"
+                                    fill="var(--secondary-label)"
+                                />
+                            </svg>
                         </button>
-                        {currentIdx < questions.length - 1 ? (
+                    </div>
+                }
+            />
+
+            {/* Progress bar */}
+            <div
+                className="h-[3px] w-full"
+                style={{ background: 'var(--seg-bg)' }}
+            >
+                <div
+                    className="h-full transition-all duration-300"
+                    style={{
+                        width: `${progress * 100}%`,
+                        background: 'var(--blue)',
+                    }}
+                />
+            </div>
+
+            <div className="flex flex-1 overflow-hidden">
+                {/* Main */}
+                <main className="flex-1 overflow-y-auto">
+                    <div className="mx-auto max-w-2xl px-4 py-6">
+                        <QuestionCard
+                            question={current}
+                            selectedAnswer={
+                                session.answers[current.id] ?? null
+                            }
+                            revealMode={session.config.revealMode}
+                            onAnswer={letter =>
+                                handleAnswer(current.id, letter)
+                            }
+                        />
+
+                        {/* Bottom navigation */}
+                        <div className="mt-6 flex items-center gap-3">
                             <button
                                 type="button"
                                 onClick={() =>
-                                    setCurrentIdx(i =>
-                                        Math.min(questions.length - 1, i + 1),
-                                    )
+                                    setCurrentIdx(i => Math.max(0, i - 1))
                                 }
-                                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
-                            >
-                                Próxima →
-                            </button>
-                        ) : (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    const unanswered =
-                                        questions.length - answered;
-                                    if (
-                                        unanswered > 0 &&
-                                        !confirm(
-                                            `Você ainda tem ${unanswered} questão(ões) sem resposta. Finalizar mesmo assim?`,
-                                        )
-                                    )
-                                        return;
-                                    handleFinish();
+                                disabled={currentIdx === 0}
+                                className="flex h-11 flex-1 items-center justify-center rounded-xl text-[17px] font-semibold disabled:opacity-30 transition-opacity active:opacity-60"
+                                style={{
+                                    background: 'var(--card-bg)',
+                                    color: 'var(--blue)',
                                 }}
-                                className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors"
                             >
-                                Enviar Simulado ✓
+                                ← Anterior
                             </button>
-                        )}
+
+                            {currentIdx < questions.length - 1 ? (
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setCurrentIdx(i =>
+                                            Math.min(
+                                                questions.length - 1,
+                                                i + 1,
+                                            ),
+                                        )
+                                    }
+                                    className="flex h-11 flex-1 items-center justify-center rounded-xl text-[17px] font-semibold transition-opacity active:opacity-60"
+                                    style={{
+                                        background: 'var(--blue)',
+                                        color: '#fff',
+                                    }}
+                                >
+                                    Próxima →
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const blank =
+                                            questions.length - answered;
+                                        if (
+                                            blank > 0 &&
+                                            !window.confirm(
+                                                `Ainda há ${blank} questão(ões) sem resposta. Finalizar mesmo assim?`,
+                                            )
+                                        )
+                                            return;
+                                        handleFinish();
+                                    }}
+                                    className="flex h-11 flex-1 items-center justify-center rounded-xl text-[17px] font-semibold transition-opacity active:opacity-60"
+                                    style={{
+                                        background: 'var(--green)',
+                                        color: '#fff',
+                                    }}
+                                >
+                                    Enviar ✓
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </main>
 
-                {/* Answer card sidebar */}
-                <aside className="hidden lg:flex w-56 flex-col border-l border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-y-auto p-4">
-                    <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-                        Cartão de Respostas
-                    </h2>
-                    <div className="flex flex-wrap gap-1.5">
-                        {questions.map((q, i) => {
-                            const ans = session.answers[q.id];
-                            const isActive = i === currentIdx;
-                            const isCorrect = ans === q.correctAlternative;
-                            const reveal =
-                                session.config.revealMode === 'immediate' &&
-                                !!ans;
-
-                            let cls =
-                                'w-8 h-8 rounded-lg text-xs font-semibold flex items-center justify-center cursor-pointer border transition-colors ';
-
-                            if (isActive) {
-                                cls +=
-                                    'border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 ring-2 ring-blue-400';
-                            } else if (reveal) {
-                                cls += isCorrect
-                                    ? 'border-green-500 bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-300'
-                                    : 'border-red-500 bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-300';
-                            } else if (ans) {
-                                cls +=
-                                    'border-gray-400 bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-gray-300';
-                            } else {
-                                cls +=
-                                    'border-gray-200 dark:border-neutral-700 text-gray-400 dark:text-gray-600 hover:border-blue-300';
-                            }
-
-                            return (
-                                <button
-                                    key={q.id}
-                                    type="button"
-                                    className={cls}
-                                    onClick={() => setCurrentIdx(i)}
-                                    title={`Questão ${i + 1}${ans ? ` — ${ans}` : ''}`}
-                                >
-                                    {ans ?? i + 1}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-neutral-800 text-xs text-gray-400 space-y-1">
-                        <p>
-                            <span className="font-medium text-gray-600 dark:text-gray-300">
-                                {answered}
-                            </span>{' '}
-                            / {questions.length} respondidas
-                        </p>
-                        <p>
-                            <span className="font-medium text-gray-600 dark:text-gray-300">
-                                {questions.length - answered}
-                            </span>{' '}
-                            em branco
-                        </p>
-                    </div>
+                {/* Desktop answer card */}
+                <aside
+                    className="hidden w-52 shrink-0 overflow-y-auto border-l lg:block"
+                    style={{
+                        background: 'var(--card-bg)',
+                        borderColor: 'var(--separator)',
+                    }}
+                >
+                    <AnswerCard
+                        session={session}
+                        currentIdx={currentIdx}
+                        onSelect={setCurrentIdx}
+                        onFinish={handleFinish}
+                    />
                 </aside>
             </div>
+
+            {/* Mobile answer card sheet */}
+            {showCard && (
+                <div
+                    className="fixed inset-0 z-50 flex flex-col lg:hidden"
+                    style={{ background: 'var(--sys-bg)' }}
+                >
+                    <AppleNav
+                        title="Cartão de Respostas"
+                        right={
+                            <button
+                                type="button"
+                                onClick={() => setShowCard(false)}
+                                className="text-[17px] font-semibold"
+                                style={{ color: 'var(--blue)' }}
+                            >
+                                OK
+                            </button>
+                        }
+                    />
+                    <div className="flex-1 overflow-y-auto">
+                        <AnswerCard
+                            session={session}
+                            currentIdx={currentIdx}
+                            onSelect={i => {
+                                setCurrentIdx(i);
+                                setShowCard(false);
+                            }}
+                            onFinish={handleFinish}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
 
-function TimerBadge({ seconds }: { seconds: number }) {
+function TimerDisplay({ seconds }: { seconds: number }) {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
-    const isUrgent = seconds < 300;
+    const urgent = seconds < 300;
     return (
         <span
-            className={`font-mono text-sm font-semibold px-2 py-1 rounded-lg ${
-                isUrgent
-                    ? 'bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400'
-                    : 'bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-gray-300'
-            }`}
+            className="rounded-lg px-2 py-1 text-[13px] font-semibold tabular-nums"
+            style={{
+                background: urgent
+                    ? 'rgba(255,59,48,0.1)'
+                    : 'var(--seg-bg)',
+                color: urgent ? 'var(--red)' : 'var(--label)',
+            }}
         >
             {String(m).padStart(2, '0')}:{String(s).padStart(2, '0')}
         </span>
+    );
+}
+
+function AnswerCard({
+    session,
+    currentIdx,
+    onSelect,
+    onFinish,
+}: {
+    session: SimuladoSession;
+    currentIdx: number;
+    onSelect: (i: number) => void;
+    onFinish: () => void;
+}) {
+    const { questions, answers, config } = session;
+    const answered = Object.keys(answers).length;
+
+    return (
+        <div className="p-4 space-y-4">
+            <p
+                className="text-[11px] font-semibold uppercase tracking-widest"
+                style={{ color: 'var(--secondary-label)' }}
+            >
+                Cartão de Respostas
+            </p>
+
+            <div className="flex flex-wrap gap-1.5">
+                {questions.map((q, i) => {
+                    const ans = answers[q.id];
+                    const isActive = i === currentIdx;
+                    const reveal =
+                        config.revealMode === 'immediate' && !!ans;
+                    const isCorrect = ans === q.correctAlternative;
+
+                    let bg = 'var(--seg-bg)';
+                    let fg = 'var(--secondary-label)';
+                    let ring = '';
+
+                    if (isActive) {
+                        bg = 'var(--blue)';
+                        fg = '#fff';
+                        ring = '';
+                    } else if (reveal) {
+                        bg = isCorrect
+                            ? 'rgba(52,199,89,0.15)'
+                            : 'rgba(255,59,48,0.12)';
+                        fg = isCorrect ? 'var(--green)' : 'var(--red)';
+                    } else if (ans) {
+                        bg = 'rgba(0,122,255,0.1)';
+                        fg = 'var(--blue)';
+                    }
+
+                    return (
+                        <button
+                            key={q.id}
+                            type="button"
+                            onClick={() => onSelect(i)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-[12px] font-semibold transition-transform active:scale-90"
+                            style={{ background: bg, color: fg }}
+                            title={`Q${i + 1}${ans ? ` → ${ans}` : ''}`}
+                        >
+                            {ans ?? i + 1}
+                        </button>
+                    );
+                })}
+            </div>
+
+            <div
+                className="rounded-xl p-3 space-y-1.5"
+                style={{ background: 'var(--seg-bg)' }}
+            >
+                <StatRow
+                    label="Respondidas"
+                    value={answered}
+                    color="var(--blue)"
+                />
+                <StatRow
+                    label="Em branco"
+                    value={questions.length - answered}
+                    color="var(--secondary-label)"
+                />
+            </div>
+
+            <button
+                type="button"
+                onClick={onFinish}
+                className="w-full rounded-xl py-3 text-[15px] font-semibold transition-opacity active:opacity-60"
+                style={{ background: 'var(--green)', color: '#fff' }}
+            >
+                Finalizar Simulado
+            </button>
+        </div>
+    );
+}
+
+function StatRow({
+    label,
+    value,
+    color,
+}: {
+    label: string;
+    value: number;
+    color: string;
+}) {
+    return (
+        <div className="flex items-center justify-between">
+            <span
+                className="text-[13px]"
+                style={{ color: 'var(--secondary-label)' }}
+            >
+                {label}
+            </span>
+            <span
+                className="text-[15px] font-semibold tabular-nums"
+                style={{ color }}
+            >
+                {value}
+            </span>
+        </div>
     );
 }
 
@@ -287,131 +504,233 @@ function QuestionCard({
     onAnswer: (letter: string) => void;
 }) {
     const revealed = revealMode === 'immediate' && !!selectedAnswer;
+    const color = DISC_COLOR[question.discipline];
 
     return (
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-gray-200 dark:border-neutral-800 p-6 space-y-5">
-            <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-medium bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 px-2.5 py-1 rounded-full">
-                    {DISCIPLINE_LABELS[question.discipline]}
-                </span>
-                <span className="text-xs text-gray-400">
-                    ENEM {question.year} · Q.{question.index}
-                </span>
-            </div>
+        <div
+            className="overflow-hidden rounded-2xl"
+            style={{ background: 'var(--card-bg)' }}
+        >
+            {/* Header stripe */}
+            <div
+                className="h-1.5 w-full"
+                style={{ background: color }}
+            />
 
-            {question.context && (
-                <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-gray-700 dark:text-gray-300 leading-relaxed border-l-4 border-blue-200 dark:border-blue-800 pl-4">
-                    {question.context.split('\n').map((line, i) => (
-                        <p key={i} className="mb-1">
-                            {line}
-                        </p>
-                    ))}
+            <div className="p-5 space-y-5">
+                {/* Metadata */}
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                        className="rounded-full px-3 py-1 text-[12px] font-semibold"
+                        style={{
+                            background: `${color}18`,
+                            color,
+                        }}
+                    >
+                        {DISCIPLINE_LABELS[question.discipline]}
+                    </span>
+                    <span
+                        className="text-[12px]"
+                        style={{ color: 'var(--tertiary-label)' }}
+                    >
+                        ENEM {question.year} · Q. {question.index}
+                    </span>
                 </div>
-            )}
 
-            {question.files.map((file, i) => (
-                <div key={i} className="relative w-full max-h-80 overflow-hidden rounded-lg">
-                    <Image
-                        src={file}
-                        alt={`Imagem ${i + 1}`}
-                        width={700}
-                        height={400}
-                        className="object-contain w-full"
-                        unoptimized
-                    />
-                </div>
-            ))}
+                {/* Context */}
+                {question.context && (
+                    <div
+                        className="rounded-xl p-4 text-[15px] leading-relaxed"
+                        style={{
+                            background: 'var(--seg-bg)',
+                            color: 'var(--label)',
+                        }}
+                    >
+                        {question.context.split('\n').map((line, i) => (
+                            <p key={i} className="mb-1 last:mb-0">
+                                {line}
+                            </p>
+                        ))}
+                    </div>
+                )}
 
-            {question.alternativesIntroduction && (
-                <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                    {question.alternativesIntroduction}
-                </p>
-            )}
+                {/* Images */}
+                {question.files.map((file, i) => (
+                    <div
+                        key={i}
+                        className="overflow-hidden rounded-xl"
+                    >
+                        <Image
+                            src={file}
+                            alt={`Imagem ${i + 1}`}
+                            width={700}
+                            height={400}
+                            className="w-full object-contain"
+                            unoptimized
+                        />
+                    </div>
+                ))}
 
-            <div className="space-y-2">
-                {question.alternatives.map(alt => {
-                    const isSelected = selectedAnswer === alt.letter;
-                    const isCorrect = alt.letter === question.correctAlternative;
+                {/* Intro */}
+                {question.alternativesIntroduction && (
+                    <p
+                        className="text-[15px] font-medium leading-snug"
+                        style={{ color: 'var(--label)' }}
+                    >
+                        {question.alternativesIntroduction}
+                    </p>
+                )}
 
-                    let cls =
-                        'flex items-start gap-3 w-full text-left p-3 rounded-xl border transition-colors ';
+                {/* Alternatives */}
+                <div className="space-y-2">
+                    {question.alternatives.map(alt => {
+                        const isSelected = selectedAnswer === alt.letter;
+                        const isCorrect =
+                            alt.letter === question.correctAlternative;
 
-                    if (revealed) {
-                        if (isCorrect) {
-                            cls +=
-                                'border-green-500 bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-200';
-                        } else if (isSelected && !isCorrect) {
-                            cls +=
-                                'border-red-400 bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200';
-                        } else {
-                            cls +=
-                                'border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-gray-500 opacity-60';
+                        let bg = 'transparent';
+                        let border = 'var(--separator)';
+                        let textColor = 'var(--label)';
+                        let letterBg = 'var(--seg-bg)';
+                        let letterColor = 'var(--secondary-label)';
+
+                        if (revealed) {
+                            if (isCorrect) {
+                                bg = 'rgba(52,199,89,0.1)';
+                                border = 'var(--green)';
+                                textColor = 'var(--label)';
+                                letterBg = 'var(--green)';
+                                letterColor = '#fff';
+                            } else if (isSelected) {
+                                bg = 'rgba(255,59,48,0.08)';
+                                border = 'var(--red)';
+                                textColor = 'var(--secondary-label)';
+                                letterBg = 'var(--red)';
+                                letterColor = '#fff';
+                            } else {
+                                textColor = 'var(--tertiary-label)';
+                            }
+                        } else if (isSelected) {
+                            bg = 'rgba(0,122,255,0.08)';
+                            border = 'var(--blue)';
+                            letterBg = 'var(--blue)';
+                            letterColor = '#fff';
                         }
-                    } else if (isSelected) {
-                        cls +=
-                            'border-blue-500 bg-blue-50 dark:bg-blue-950/30 text-blue-800 dark:text-blue-200';
-                    } else {
-                        cls +=
-                            'border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-gray-300 hover:border-blue-300 hover:bg-blue-50/50 dark:hover:bg-blue-950/20';
-                    }
 
-                    return (
-                        <button
-                            key={alt.letter}
-                            type="button"
-                            className={cls}
-                            onClick={() => onAnswer(alt.letter)}
-                            disabled={revealed}
-                        >
-                            <span className="shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold border-current">
-                                {alt.letter}
-                            </span>
-                            <span className="text-sm leading-relaxed">
-                                {alt.text}
-                                {alt.file && (
-                                    <Image
-                                        src={alt.file}
-                                        alt={`Alt ${alt.letter}`}
-                                        width={400}
-                                        height={200}
-                                        className="mt-2 max-h-40 object-contain"
-                                        unoptimized
-                                    />
+                        return (
+                            <button
+                                key={alt.letter}
+                                type="button"
+                                onClick={() => onAnswer(alt.letter)}
+                                disabled={revealed}
+                                className="flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all duration-150 active:opacity-60 disabled:cursor-default"
+                                style={{
+                                    background: bg,
+                                    borderColor: border,
+                                }}
+                            >
+                                <span
+                                    className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold"
+                                    style={{
+                                        background: letterBg,
+                                        color: letterColor,
+                                    }}
+                                >
+                                    {alt.letter}
+                                </span>
+                                <span
+                                    className="flex-1 text-[15px] leading-relaxed"
+                                    style={{ color: textColor }}
+                                >
+                                    {alt.text}
+                                    {alt.file && (
+                                        <Image
+                                            src={alt.file}
+                                            alt={`Alt ${alt.letter}`}
+                                            width={400}
+                                            height={200}
+                                            className="mt-2 max-h-40 object-contain"
+                                            unoptimized
+                                        />
+                                    )}
+                                </span>
+                                {revealed && isCorrect && (
+                                    <svg
+                                        className="mt-1 shrink-0"
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 18 18"
+                                        fill="none"
+                                    >
+                                        <circle
+                                            cx="9"
+                                            cy="9"
+                                            r="9"
+                                            fill="var(--green)"
+                                        />
+                                        <path
+                                            d="M5 9l3 3 5-5"
+                                            stroke="#fff"
+                                            strokeWidth="1.8"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    </svg>
                                 )}
-                            </span>
-                            {revealed && isCorrect && (
-                                <span className="ml-auto text-green-600 dark:text-green-400 shrink-0">
-                                    ✓
-                                </span>
-                            )}
-                            {revealed && isSelected && !isCorrect && (
-                                <span className="ml-auto text-red-500 shrink-0">
-                                    ✗
-                                </span>
-                            )}
-                        </button>
-                    );
-                })}
-            </div>
-
-            {revealed && (
-                <div
-                    className={`rounded-xl px-4 py-3 text-sm ${
-                        selectedAnswer === question.correctAlternative
-                            ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-900'
-                            : 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900'
-                    }`}
-                >
-                    {selectedAnswer === question.correctAlternative ? (
-                        <span>✓ Correto! A alternativa {question.correctAlternative} está certa.</span>
-                    ) : (
-                        <span>
-                            ✗ Incorreto. A resposta certa é{' '}
-                            <strong>{question.correctAlternative}</strong>.
-                        </span>
-                    )}
+                                {revealed && isSelected && !isCorrect && (
+                                    <svg
+                                        className="mt-1 shrink-0"
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 18 18"
+                                        fill="none"
+                                    >
+                                        <circle
+                                            cx="9"
+                                            cy="9"
+                                            r="9"
+                                            fill="var(--red)"
+                                        />
+                                        <path
+                                            d="M6 6l6 6M12 6l-6 6"
+                                            stroke="#fff"
+                                            strokeWidth="1.8"
+                                            strokeLinecap="round"
+                                        />
+                                    </svg>
+                                )}
+                            </button>
+                        );
+                    })}
                 </div>
-            )}
+
+                {/* Feedback banner */}
+                {revealed && (
+                    <div
+                        className="rounded-xl p-4 text-[15px] font-medium"
+                        style={
+                            selectedAnswer === question.correctAlternative
+                                ? {
+                                      background: 'rgba(52,199,89,0.1)',
+                                      color: 'var(--green)',
+                                  }
+                                : {
+                                      background: 'rgba(255,59,48,0.1)',
+                                      color: 'var(--red)',
+                                  }
+                        }
+                    >
+                        {selectedAnswer === question.correctAlternative ? (
+                            <>✓ Correto! A alternativa {question.correctAlternative} está certa.</>
+                        ) : (
+                            <>
+                                ✗ Resposta incorreta. A alternativa correta é{' '}
+                                <strong>{question.correctAlternative}</strong>.
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
