@@ -144,7 +144,7 @@ const mdComponents: Components = {
 
 type View = 'setup' | 'exam' | 'summary';
 
-export default function EnemApp() {
+export default function EnemApp({ onHome }: { onHome?: () => void } = {}) {
   // Configuração
   const [year, setYear] = useState<number>(2022);
   const [language, setLanguage] = useState<'ingles' | 'espanhol'>('ingles');
@@ -298,6 +298,7 @@ export default function EnemApp() {
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
           <div className="flex items-center space-x-3">
+            {onHome && <button onClick={onHome} className="text-sm text-blue-600 hover:underline">← Início</button>}
             <div className="rounded bg-blue-600 p-2 text-xl font-bold leading-none text-white">ENEM</div>
             <div className="hidden sm:block">
               <p className="font-semibold leading-tight text-slate-700">Simulador {view !== 'setup' && year}</p>
