@@ -1,6 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     reactStrictMode: true,
+    images: {
+        remotePatterns: [
+            {
+                protocol: 'https',
+                hostname: 'enem.dev',
+            },
+        ],
+    },
     async headers() {
         return [
             {
