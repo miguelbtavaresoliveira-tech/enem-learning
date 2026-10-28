@@ -6,7 +6,6 @@ import {
     AVAILABLE_YEARS,
     ALL_DISCIPLINES,
     DISCIPLINE_LABELS,
-    DIFFICULTY_LABELS,
     type Discipline,
     type DifficultyLevel,
     type AnswerRevealMode,
@@ -14,6 +13,31 @@ import {
     type SimuladoSession,
 } from '@/lib/simulado/types';
 import { getSeenQuestionIds, saveSession } from '@/lib/simulado/storage';
+import {
+    AppleNav,
+    NavBackBtn,
+    NavTextBtn,
+    GroupSection,
+    GroupRow,
+    AppleToggle,
+    SegmentedControl,
+    AppleBtn,
+    YearChip,
+} from './_ui';
+
+const DISCIPLINE_ICONS: Record<Discipline, string> = {
+    'ciencias-humanas': '🏛',
+    'ciencias-natureza': '🔬',
+    linguagens: '📖',
+    matematica: '📐',
+};
+
+const DISCIPLINE_COLORS: Record<Discipline, string> = {
+    'ciencias-humanas': '#FF6B35',
+    'ciencias-natureza': '#34C759',
+    linguagens: '#007AFF',
+    matematica: '#AF52DE',
+};
 
 export default function SimuladoConfigPage() {
     const router = useRouter();
@@ -43,26 +67,15 @@ export default function SimuladoConfigPage() {
         );
     }
 
-    function toggleAllYears() {
-        setYears(prev =>
-            prev.length === AVAILABLE_YEARS.length ? [] : [...AVAILABLE_YEARS],
-        );
-    }
-
     async function handleStart() {
         if (!disciplines.length) {
-            setError('Selecione ao menos uma área.');
+            setError('Selecione ao menos uma área de conhecimento.');
             return;
         }
         if (!years.length) {
             setError('Selecione ao menos um ano.');
             return;
         }
-        if (questionCount < 1 || questionCount > 180) {
-            setError('Número de questões deve ser entre 1 e 180.');
-            return;
-        }
-
         setError('');
         setLoading(true);
 
@@ -94,7 +107,7 @@ export default function SimuladoConfigPage() {
 
             if (!questions.length) {
                 setError(
-                    'Nenhuma questão encontrada com os filtros selecionados. Tente ajustar os critérios.',
+                    'Nenhuma questão encontrada. Tente ajustar os filtros.',
                 );
                 setLoading(false);
                 return;
@@ -116,283 +129,261 @@ export default function SimuladoConfigPage() {
         }
     }
 
-    return (
-        <div className="min-h-screen bg-gray-50 dark:bg-neutral-950 py-10 px-4">
-            <div className="max-w-2xl mx-auto space-y-8">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                        Novo Simulado
-                    </h1>
-                    <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">
-                        Configure seu simulado do ENEM
-                    </p>
-                </div>
+    const allYearsSelected = years.length === AVAILABLE_YEARS.length;
 
+    return (
+        <div className="min-h-screen" style={{ background: 'var(--sys-bg)' }}>
+            <AppleNav
+                title="Novo Simulado"
+                left={<NavBackBtn label="Início" href="/" />}
+                right={
+                    <NavTextBtn
+                        label="Histórico"
+                        href="/simulado/historico"
+                    />
+                }
+            />
+
+            {/* Large title */}
+            <div className="px-4 pb-2 pt-6">
+                <h1
+                    className="text-[34px] font-bold tracking-tight"
+                    style={{ color: 'var(--label)' }}
+                >
+                    Novo Simulado
+                </h1>
+                <p
+                    className="mt-1 text-[15px]"
+                    style={{ color: 'var(--secondary-label)' }}
+                >
+                    Configure sua sessão de estudos
+                </p>
+            </div>
+
+            <div className="space-y-0 px-4 pb-10">
                 {/* Áreas */}
-                <Section title="Áreas de conhecimento">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {ALL_DISCIPLINES.map(d => (
-                            <CheckCard
-                                key={d}
-                                label={DISCIPLINE_LABELS[d]}
-                                checked={disciplines.includes(d)}
-                                onChange={() => toggleDiscipline(d)}
-                            />
-                        ))}
-                    </div>
-                </Section>
+                <GroupSection header="Áreas de Conhecimento">
+                    {ALL_DISCIPLINES.map((d, i) => (
+                        <GroupRow
+                            key={d}
+                            label={
+                                <span className="flex items-center gap-3">
+                                    <span
+                                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-[15px]"
+                                        style={{
+                                            background: DISCIPLINE_COLORS[d],
+                                        }}
+                                    >
+                                        {DISCIPLINE_ICONS[d]}
+                                    </span>
+                                    {DISCIPLINE_LABELS[d]}
+                                </span>
+                            }
+                            right={
+                                <AppleToggle
+                                    checked={disciplines.includes(d)}
+                                    onChange={() => toggleDiscipline(d)}
+                                />
+                            }
+                            separator={i < ALL_DISCIPLINES.length - 1}
+                        />
+                    ))}
+                </GroupSection>
 
                 {/* Anos */}
-                <Section title="Anos das provas">
-                    <button
-                        type="button"
-                        onClick={toggleAllYears}
-                        className="text-xs text-blue-600 dark:text-blue-400 underline mb-3 block"
-                    >
-                        {years.length === AVAILABLE_YEARS.length
-                            ? 'Desmarcar todos'
-                            : 'Selecionar todos'}
-                    </button>
-                    <div className="flex flex-wrap gap-2">
-                        {AVAILABLE_YEARS.map(y => (
-                            <button
-                                key={y}
-                                type="button"
-                                onClick={() => toggleYear(y)}
-                                className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                                    years.includes(y)
-                                        ? 'bg-blue-600 text-white border-blue-600'
-                                        : 'bg-white dark:bg-neutral-900 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-neutral-700 hover:border-blue-400'
-                                }`}
+                <GroupSection
+                    header="Anos das Provas"
+                    footer="Questões de todos os anos selecionados serão misturadas."
+                >
+                    <GroupRow
+                        label="Todos os anos"
+                        right={
+                            <AppleToggle
+                                checked={allYearsSelected}
+                                onChange={v =>
+                                    setYears(
+                                        v ? [...AVAILABLE_YEARS] : [],
+                                    )
+                                }
+                            />
+                        }
+                        separator
+                    />
+                    <GroupRow
+                        label={
+                            <div className="flex flex-wrap gap-2 py-1">
+                                {AVAILABLE_YEARS.map(y => (
+                                    <YearChip
+                                        key={y}
+                                        year={y}
+                                        selected={years.includes(y)}
+                                        onToggle={() => toggleYear(y)}
+                                    />
+                                ))}
+                            </div>
+                        }
+                        separator={false}
+                    />
+                </GroupSection>
+
+                {/* Questões */}
+                <GroupSection header="Questões">
+                    <GroupRow
+                        label="Total de questões"
+                        right={
+                            <span
+                                className="text-[17px] tabular-nums"
+                                style={{ color: 'var(--blue)' }}
                             >
-                                {y}
-                            </button>
-                        ))}
-                    </div>
-                </Section>
-
-                {/* Número de questões */}
-                <Section title="Número de questões">
-                    <div className="flex items-center gap-4">
-                        <input
-                            type="range"
-                            min={5}
-                            max={90}
-                            step={5}
-                            value={questionCount}
-                            onChange={e =>
-                                setQuestionCount(Number(e.target.value))
-                            }
-                            className="flex-1 accent-blue-600"
-                        />
-                        <span className="w-16 text-center font-semibold text-gray-900 dark:text-white text-lg">
-                            {questionCount}
-                        </span>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1">
-                        Questões distribuídas igualmente entre as áreas
-                        selecionadas
-                    </p>
-                </Section>
-
-                {/* Dificuldade */}
-                <Section title="Nível de dificuldade">
-                    <p className="text-xs text-gray-400 mb-3">
-                        Baseado na posição da questão dentro de cada área (início
-                        = fácil, fim = difícil)
-                    </p>
-                    <div className="flex gap-2 flex-wrap">
-                        {(
-                            Object.entries(DIFFICULTY_LABELS) as [
-                                DifficultyLevel,
-                                string,
-                            ][]
-                        ).map(([key, label]) => (
-                            <button
-                                key={key}
-                                type="button"
-                                onClick={() => setDifficulty(key)}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                                    difficulty === key
-                                        ? 'bg-blue-600 text-white border-blue-600'
-                                        : 'bg-white dark:bg-neutral-900 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-neutral-700 hover:border-blue-400'
-                                }`}
-                            >
-                                {label}
-                            </button>
-                        ))}
-                    </div>
-                </Section>
-
-                {/* Gabarito */}
-                <Section title="Visualização do gabarito">
-                    <div className="flex flex-col gap-3">
-                        <RadioCard
-                            label="Ao final do simulado"
-                            description="Veja os acertos e erros só depois de enviar"
-                            checked={revealMode === 'end'}
-                            onChange={() => setRevealMode('end')}
-                        />
-                        <RadioCard
-                            label="Imediato (ao responder)"
-                            description="Feedback instantâneo em cada questão"
-                            checked={revealMode === 'immediate'}
-                            onChange={() => setRevealMode('immediate')}
-                        />
-                    </div>
-                </Section>
-
-                {/* Questões novas */}
-                <Section title="Filtro de questões">
-                    <label className="flex items-start gap-3 cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={onlyNew}
-                            onChange={e => setOnlyNew(e.target.checked)}
-                            className="mt-0.5 accent-blue-600 w-4 h-4"
-                        />
-                        <div>
-                            <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                Apenas questões que nunca vi
+                                {questionCount}
                             </span>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                                Exclui questões que já apareceram nos seus
-                                simulados anteriores
-                            </p>
-                        </div>
-                    </label>
-                </Section>
-
-                {/* Timer */}
-                <Section title="Cronômetro">
-                    <label className="flex items-start gap-3 cursor-pointer mb-3">
-                        <input
-                            type="checkbox"
-                            checked={timerEnabled}
-                            onChange={e => setTimerEnabled(e.target.checked)}
-                            className="mt-0.5 accent-blue-600 w-4 h-4"
-                        />
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                            Ativar cronômetro regressivo
-                        </span>
-                    </label>
-                    {timerEnabled && (
-                        <div className="flex items-center gap-4 mt-2">
+                        }
+                        separator
+                    />
+                    <GroupRow
+                        label={
                             <input
                                 type="range"
-                                min={10}
-                                max={300}
-                                step={10}
-                                value={timerMinutes}
+                                min={5}
+                                max={90}
+                                step={5}
+                                value={questionCount}
                                 onChange={e =>
-                                    setTimerMinutes(Number(e.target.value))
+                                    setQuestionCount(Number(e.target.value))
                                 }
-                                className="flex-1 accent-blue-600"
+                                className="w-full"
+                                style={{ accentColor: 'var(--blue)' }}
                             />
-                            <span className="w-20 text-center font-semibold text-gray-900 dark:text-white">
-                                {timerMinutes} min
-                            </span>
-                        </div>
+                        }
+                        separator
+                    />
+                    <GroupRow
+                        label="Dificuldade"
+                        right={
+                            <SegmentedControl
+                                options={[
+                                    { value: 'all' as DifficultyLevel, label: 'Todas' },
+                                    { value: 'easy' as DifficultyLevel, label: 'Fácil' },
+                                    { value: 'medium' as DifficultyLevel, label: 'Médio' },
+                                    { value: 'hard' as DifficultyLevel, label: 'Difícil' },
+                                ]}
+                                value={difficulty}
+                                onChange={setDifficulty}
+                            />
+                        }
+                        separator
+                    />
+                    <GroupRow
+                        label="Apenas questões novas"
+                        sublabel="Exclui questões que já apareceram antes"
+                        right={
+                            <AppleToggle
+                                checked={onlyNew}
+                                onChange={setOnlyNew}
+                            />
+                        }
+                        separator={false}
+                    />
+                </GroupSection>
+
+                {/* Gabarito */}
+                <GroupSection
+                    header="Gabarito"
+                    footer="No modo imediato, cada alternativa mostra certo/errado na hora. No modo ao final, o gabarito aparece somente após enviar."
+                >
+                    <GroupRow
+                        label="Mostrar gabarito"
+                        right={
+                            <SegmentedControl
+                                options={[
+                                    {
+                                        value: 'end' as AnswerRevealMode,
+                                        label: 'Ao final',
+                                    },
+                                    {
+                                        value: 'immediate' as AnswerRevealMode,
+                                        label: 'Imediato',
+                                    },
+                                ]}
+                                value={revealMode}
+                                onChange={setRevealMode}
+                            />
+                        }
+                        separator={false}
+                    />
+                </GroupSection>
+
+                {/* Cronômetro */}
+                <GroupSection header="Cronômetro">
+                    <GroupRow
+                        label="Ativar cronômetro"
+                        right={
+                            <AppleToggle
+                                checked={timerEnabled}
+                                onChange={setTimerEnabled}
+                            />
+                        }
+                        separator={timerEnabled}
+                    />
+                    {timerEnabled && (
+                        <>
+                            <GroupRow
+                                label="Duração"
+                                right={
+                                    <span
+                                        className="text-[17px] tabular-nums"
+                                        style={{ color: 'var(--blue)' }}
+                                    >
+                                        {timerMinutes} min
+                                    </span>
+                                }
+                                separator
+                            />
+                            <GroupRow
+                                label={
+                                    <input
+                                        type="range"
+                                        min={10}
+                                        max={300}
+                                        step={10}
+                                        value={timerMinutes}
+                                        onChange={e =>
+                                            setTimerMinutes(
+                                                Number(e.target.value),
+                                            )
+                                        }
+                                        className="w-full"
+                                        style={{ accentColor: 'var(--blue)' }}
+                                    />
+                                }
+                                separator={false}
+                            />
+                        </>
                     )}
-                </Section>
+                </GroupSection>
 
                 {error && (
-                    <p className="text-sm text-red-500 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg px-4 py-3">
+                    <div
+                        className="rounded-xl px-4 py-3 text-[15px]"
+                        style={{
+                            background: 'rgba(255,59,48,0.1)',
+                            color: 'var(--red)',
+                        }}
+                    >
                         {error}
-                    </p>
+                    </div>
                 )}
 
-                <button
-                    type="button"
-                    onClick={handleStart}
-                    disabled={loading}
-                    className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold text-base transition-colors"
-                >
-                    {loading ? 'Gerando simulado...' : 'Iniciar Simulado →'}
-                </button>
+                <div className="pt-2">
+                    <AppleBtn
+                        onClick={handleStart}
+                        disabled={loading}
+                        fullWidth
+                    >
+                        {loading ? 'Gerando simulado…' : 'Iniciar Simulado'}
+                    </AppleBtn>
+                </div>
             </div>
         </div>
-    );
-}
-
-function Section({
-    title,
-    children,
-}: {
-    title: string;
-    children: React.ReactNode;
-}) {
-    return (
-        <div className="bg-white dark:bg-neutral-900 rounded-2xl p-5 border border-gray-200 dark:border-neutral-800">
-            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
-                {title}
-            </h2>
-            {children}
-        </div>
-    );
-}
-
-function CheckCard({
-    label,
-    checked,
-    onChange,
-}: {
-    label: string;
-    checked: boolean;
-    onChange: () => void;
-}) {
-    return (
-        <label
-            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                checked
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
-                    : 'border-gray-200 dark:border-neutral-800 hover:border-blue-300'
-            }`}
-        >
-            <input
-                type="checkbox"
-                checked={checked}
-                onChange={onChange}
-                className="accent-blue-600 w-4 h-4"
-            />
-            <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                {label}
-            </span>
-        </label>
-    );
-}
-
-function RadioCard({
-    label,
-    description,
-    checked,
-    onChange,
-}: {
-    label: string;
-    description: string;
-    checked: boolean;
-    onChange: () => void;
-}) {
-    return (
-        <label
-            className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                checked
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
-                    : 'border-gray-200 dark:border-neutral-800 hover:border-blue-300'
-            }`}
-        >
-            <input
-                type="radio"
-                checked={checked}
-                onChange={onChange}
-                className="mt-0.5 accent-blue-600 w-4 h-4"
-            />
-            <div>
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                    {label}
-                </span>
-                <p className="text-xs text-gray-400 mt-0.5">{description}</p>
-            </div>
-        </label>
     );
 }

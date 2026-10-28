@@ -10,13 +10,19 @@ import {
     type Discipline,
 } from '@/lib/simulado/types';
 import { loadSession, clearSession } from '@/lib/simulado/storage';
+import { AppleNav, NavBackBtn, NavTextBtn, GroupSection, GroupRow, ScoreRing } from '../_ui';
+
+const DISC_COLOR: Record<Discipline, string> = {
+    'ciencias-humanas': '#FF6B35',
+    'ciencias-natureza': '#34C759',
+    linguagens: '#007AFF',
+    matematica: '#AF52DE',
+};
 
 export default function SimuladoResultsPage() {
     const router = useRouter();
     const [session, setSession] = useState<SimuladoSession | null>(null);
-    const [expandedQuestion, setExpandedQuestion] = useState<string | null>(
-        null,
-    );
+    const [expandedId, setExpandedId] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
 
     useEffect(() => {
@@ -30,8 +36,16 @@ export default function SimuladoResultsPage() {
 
     if (!session) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-neutral-950">
-                <p className="text-gray-400">Carregando resultados...</p>
+            <div
+                className="flex min-h-screen items-center justify-center"
+                style={{ background: 'var(--sys-bg)' }}
+            >
+                <p
+                    className="text-[15px]"
+                    style={{ color: 'var(--secondary-label)' }}
+                >
+                    Carregando…
+                </p>
             </div>
         );
     }
@@ -47,261 +61,309 @@ export default function SimuladoResultsPage() {
     const blank = questions.filter(q => !answers[q.id]);
     const score = total > 0 ? Math.round((correct / total) * 100) : 0;
 
-    const byDiscipline = questions.reduce<Partial<Record<Discipline, SimuladoQuestion[]>>>(
-        (acc, q) => {
-            if (!acc[q.discipline]) acc[q.discipline] = [];
-            acc[q.discipline]!.push(q);
-            return acc;
-        },
-        {},
-    );
+    const byDiscipline = questions.reduce<
+        Partial<Record<Discipline, SimuladoQuestion[]>>
+    >((acc, q) => {
+        if (!acc[q.discipline]) acc[q.discipline] = [];
+        acc[q.discipline]!.push(q);
+        return acc;
+    }, {});
+
+    const date = new Date(session.startedAt).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+    });
 
     const reviewPrompt = buildReviewPrompt(wrong, answers);
 
     async function copyPrompt() {
-        await navigator.clipboard.writeText(reviewPrompt);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    }
-
-    function handleNewSimulado() {
-        clearSession();
-        router.push('/simulado');
+        try {
+            await navigator.clipboard.writeText(reviewPrompt);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            // fallback: select all text
+        }
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-neutral-950 py-10 px-4">
-            <div className="max-w-3xl mx-auto space-y-8">
-                {/* Header */}
-                <div className="flex items-start justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                            Resultado do Simulado
-                        </h1>
-                        <p className="text-gray-400 text-sm mt-1">
-                            {new Date(session.startedAt).toLocaleDateString(
-                                'pt-BR',
-                                {
-                                    day: '2-digit',
-                                    month: 'long',
-                                    year: 'numeric',
-                                },
-                            )}
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={handleNewSimulado}
-                        className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
-                    >
-                        Novo Simulado
-                    </button>
-                </div>
+        <div
+            className="min-h-screen"
+            style={{ background: 'var(--sys-bg)' }}
+        >
+            <AppleNav
+                title="Resultado"
+                left={<NavBackBtn label="Início" href="/" />}
+                right={
+                    <NavTextBtn
+                        label="Novo"
+                        onClick={() => {
+                            clearSession();
+                            router.push('/simulado');
+                        }}
+                    />
+                }
+            />
 
-                {/* Score card */}
-                <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-gray-200 dark:border-neutral-800 p-6">
-                    <div className="flex flex-col sm:flex-row items-center gap-6">
-                        <ScoreCircle score={score} />
-                        <div className="flex-1 grid grid-cols-3 gap-4 w-full">
-                            <StatCard
+            {/* Large title */}
+            <div className="px-4 pb-2 pt-6">
+                <h1
+                    className="text-[34px] font-bold tracking-tight"
+                    style={{ color: 'var(--label)' }}
+                >
+                    Resultado
+                </h1>
+                <p
+                    className="mt-1 text-[15px]"
+                    style={{ color: 'var(--secondary-label)' }}
+                >
+                    {date}
+                </p>
+            </div>
+
+            <div className="space-y-0 px-4 pb-12">
+                {/* Score hero */}
+                <div
+                    className="mt-4 overflow-hidden rounded-2xl p-6"
+                    style={{ background: 'var(--card-bg)' }}
+                >
+                    <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:justify-between">
+                        <ScoreRing score={score} size={140} strokeWidth={12} />
+                        <div className="flex flex-1 justify-around sm:justify-end sm:gap-8">
+                            <StatBadge
                                 label="Acertos"
                                 value={correct}
-                                color="green"
+                                color="var(--green)"
                             />
-                            <StatCard
+                            <StatBadge
                                 label="Erros"
                                 value={wrong.length}
-                                color="red"
+                                color="var(--red)"
                             />
-                            <StatCard
+                            <StatBadge
                                 label="Em branco"
                                 value={blank.length}
-                                color="gray"
+                                color="var(--secondary-label)"
                             />
                         </div>
                     </div>
                 </div>
 
                 {/* Por disciplina */}
-                <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-gray-200 dark:border-neutral-800 p-6">
-                    <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
-                        Desempenho por Área
-                    </h2>
-                    <div className="space-y-3">
-                        {(
-                            Object.entries(byDiscipline) as [
-                                Discipline,
-                                SimuladoQuestion[],
-                            ][]
-                        ).map(([disc, qs]) => {
-                            const c = qs.filter(
-                                q =>
-                                    answers[q.id] === q.correctAlternative,
-                            ).length;
-                            const pct =
-                                qs.length > 0
-                                    ? Math.round((c / qs.length) * 100)
-                                    : 0;
-                            return (
-                                <div key={disc}>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="text-gray-700 dark:text-gray-300">
-                                            {DISCIPLINE_LABELS[disc]}
-                                        </span>
-                                        <span className="font-medium text-gray-900 dark:text-white">
-                                            {c}/{qs.length} ({pct}%)
-                                        </span>
-                                    </div>
-                                    <div className="h-2 bg-gray-100 dark:bg-neutral-800 rounded-full">
+                <GroupSection header="Desempenho por Área">
+                    {(
+                        Object.entries(byDiscipline) as [
+                            Discipline,
+                            SimuladoQuestion[],
+                        ][]
+                    ).map(([disc, qs], i, arr) => {
+                        const c = qs.filter(
+                            q => answers[q.id] === q.correctAlternative,
+                        ).length;
+                        const pct =
+                            qs.length > 0
+                                ? Math.round((c / qs.length) * 100)
+                                : 0;
+                        const color = DISC_COLOR[disc];
+                        return (
+                            <GroupRow
+                                key={disc}
+                                separator={i < arr.length - 1}
+                                label={
+                                    <div className="w-full space-y-2 py-1">
+                                        <div className="flex items-center justify-between">
+                                            <span
+                                                className="text-[15px]"
+                                                style={{
+                                                    color: 'var(--label)',
+                                                }}
+                                            >
+                                                {DISCIPLINE_LABELS[disc]}
+                                            </span>
+                                            <span
+                                                className="text-[15px] font-semibold tabular-nums"
+                                                style={{ color }}
+                                            >
+                                                {c}/{qs.length}{' '}
+                                                <span
+                                                    style={{
+                                                        color: 'var(--secondary-label)',
+                                                        fontWeight: 400,
+                                                    }}
+                                                >
+                                                    ({pct}%)
+                                                </span>
+                                            </span>
+                                        </div>
                                         <div
-                                            className={`h-2 rounded-full transition-all ${
-                                                pct >= 70
-                                                    ? 'bg-green-500'
-                                                    : pct >= 50
-                                                      ? 'bg-yellow-500'
-                                                      : 'bg-red-500'
-                                            }`}
-                                            style={{ width: `${pct}%` }}
-                                        />
+                                            className="h-2 w-full overflow-hidden rounded-full"
+                                            style={{
+                                                background: 'var(--seg-bg)',
+                                            }}
+                                        >
+                                            <div
+                                                className="h-full rounded-full transition-all duration-700"
+                                                style={{
+                                                    width: `${pct}%`,
+                                                    background: color,
+                                                }}
+                                            />
+                                        </div>
                                     </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
+                                }
+                            />
+                        );
+                    })}
+                </GroupSection>
 
-                {/* Questões erradas */}
+                {/* Erros */}
                 {wrong.length > 0 && (
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-gray-200 dark:border-neutral-800 p-6">
-                        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
-                            Questões Erradas ({wrong.length})
-                        </h2>
-                        <div className="space-y-3">
-                            {wrong.map((q, i) => (
-                                <WrongQuestionCard
-                                    key={q.id}
-                                    question={q}
-                                    selectedAnswer={answers[q.id]}
-                                    index={i + 1}
-                                    expanded={expandedQuestion === q.id}
-                                    onToggle={() =>
-                                        setExpandedQuestion(
-                                            expandedQuestion === q.id
-                                                ? null
-                                                : q.id,
-                                        )
-                                    }
-                                />
-                            ))}
-                        </div>
-                    </div>
+                    <GroupSection
+                        header={`Questões Erradas (${wrong.length})`}
+                    >
+                        {wrong.map((q, i) => (
+                            <WrongRow
+                                key={q.id}
+                                question={q}
+                                selectedAnswer={answers[q.id]}
+                                index={i + 1}
+                                expanded={expandedId === q.id}
+                                onToggle={() =>
+                                    setExpandedId(
+                                        expandedId === q.id ? null : q.id,
+                                    )
+                                }
+                                separator={i < wrong.length - 1 || expandedId === q.id}
+                            />
+                        ))}
+                    </GroupSection>
                 )}
 
-                {/* Questões em branco */}
+                {/* Em branco */}
                 {blank.length > 0 && (
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-gray-200 dark:border-neutral-800 p-5">
-                        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-                            Questões sem resposta ({blank.length})
-                        </h2>
-                        <div className="flex flex-wrap gap-2">
-                            {blank.map((q, i) => (
-                                <span
-                                    key={q.id}
-                                    className="px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-neutral-800 text-sm text-gray-600 dark:text-gray-400"
-                                >
-                                    Q.{i + 1} — {DISCIPLINE_LABELS[q.discipline]} {q.year}
-                                </span>
-                            ))}
-                        </div>
-                    </div>
+                    <GroupSection
+                        header={`Em branco (${blank.length})`}
+                    >
+                        {blank.map((q, i) => (
+                            <GroupRow
+                                key={q.id}
+                                separator={i < blank.length - 1}
+                                label={
+                                    <span style={{ color: 'var(--label)' }}>
+                                        Q. {q.index} — {DISCIPLINE_LABELS[q.discipline]}{' '}
+                                        <span
+                                            style={{
+                                                color: 'var(--secondary-label)',
+                                            }}
+                                        >
+                                            {q.year}
+                                        </span>
+                                    </span>
+                                }
+                                right={
+                                    <span
+                                        className="rounded-full px-2 py-0.5 text-[12px] font-medium"
+                                        style={{
+                                            background: 'var(--seg-bg)',
+                                            color: 'var(--secondary-label)',
+                                        }}
+                                    >
+                                        Sem resposta
+                                    </span>
+                                }
+                            />
+                        ))}
+                    </GroupSection>
                 )}
 
                 {/* Prompt de revisão */}
                 {wrong.length > 0 && (
-                    <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-gray-200 dark:border-neutral-800 p-6">
-                        <div className="flex items-center justify-between mb-3">
-                            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                Prompt de Revisão
-                            </h2>
-                            <button
-                                type="button"
-                                onClick={copyPrompt}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-gray-700 dark:text-gray-300 transition-colors"
-                            >
-                                {copied ? '✓ Copiado!' : 'Copiar'}
-                            </button>
-                        </div>
-                        <p className="text-xs text-gray-400 mb-3">
-                            Cole esse prompt em qualquer IA (ChatGPT, Claude,
-                            etc.) para revisar os conteúdos que você errou.
-                        </p>
-                        <pre className="text-xs bg-gray-50 dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-4 whitespace-pre-wrap text-gray-700 dark:text-gray-300 leading-relaxed max-h-72 overflow-y-auto">
-                            {reviewPrompt}
-                        </pre>
-                    </div>
+                    <GroupSection
+                        header="Prompt de Revisão"
+                        footer="Cole esse texto em qualquer IA para receber uma revisão personalizada dos seus erros."
+                    >
+                        <GroupRow
+                            label="Copiar prompt de revisão"
+                            right={
+                                copied ? (
+                                    <span
+                                        className="text-[15px]"
+                                        style={{ color: 'var(--green)' }}
+                                    >
+                                        Copiado ✓
+                                    </span>
+                                ) : (
+                                    <span
+                                        className="text-[15px]"
+                                        style={{ color: 'var(--blue)' }}
+                                    >
+                                        Copiar
+                                    </span>
+                                )
+                            }
+                            onClick={copyPrompt}
+                            chevron={false}
+                            separator={false}
+                        />
+                    </GroupSection>
                 )}
+
+                {/* Histórico link */}
+                <GroupSection>
+                    <GroupRow
+                        label="Ver histórico de simulados"
+                        onClick={() => router.push('/simulado/historico')}
+                        chevron
+                        separator={false}
+                    />
+                </GroupSection>
             </div>
         </div>
     );
 }
 
-function ScoreCircle({ score }: { score: number }) {
-    const color =
-        score >= 70
-            ? 'text-green-500'
-            : score >= 50
-              ? 'text-yellow-500'
-              : 'text-red-500';
-    return (
-        <div className="flex flex-col items-center">
-            <div
-                className={`text-5xl font-bold ${color} tabular-nums`}
-            >
-                {score}%
-            </div>
-            <div className="text-xs text-gray-400 mt-1">aproveitamento</div>
-        </div>
-    );
-}
-
-function StatCard({
+function StatBadge({
     label,
     value,
     color,
 }: {
     label: string;
     value: number;
-    color: 'green' | 'red' | 'gray';
+    color: string;
 }) {
-    const colorMap = {
-        green: 'text-green-600 dark:text-green-400',
-        red: 'text-red-600 dark:text-red-400',
-        gray: 'text-gray-500 dark:text-gray-400',
-    };
     return (
-        <div className="text-center">
-            <div
-                className={`text-3xl font-bold tabular-nums ${colorMap[color]}`}
+        <div className="flex flex-col items-center gap-1">
+            <span
+                className="text-[36px] font-bold tabular-nums leading-none"
+                style={{ color }}
             >
                 {value}
-            </div>
-            <div className="text-xs text-gray-400 mt-1">{label}</div>
+            </span>
+            <span
+                className="text-[12px] uppercase tracking-wide"
+                style={{ color: 'var(--secondary-label)' }}
+            >
+                {label}
+            </span>
         </div>
     );
 }
 
-function WrongQuestionCard({
+function WrongRow({
     question,
     selectedAnswer,
     index,
     expanded,
     onToggle,
+    separator,
 }: {
     question: SimuladoQuestion;
     selectedAnswer: string;
     index: number;
     expanded: boolean;
     onToggle: () => void;
+    separator: boolean;
 }) {
     const correctAlt = question.alternatives.find(
         a => a.letter === question.correctAlternative,
@@ -309,66 +371,155 @@ function WrongQuestionCard({
     const wrongAlt = question.alternatives.find(
         a => a.letter === selectedAnswer,
     );
+    const color = DISC_COLOR[question.discipline];
 
     return (
-        <div className="border border-red-200 dark:border-red-900/50 rounded-xl overflow-hidden">
+        <>
             <button
                 type="button"
-                className="w-full flex items-center justify-between p-4 text-left hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
                 onClick={onToggle}
+                className="flex w-full min-h-[52px] items-center gap-3 px-4 text-left transition-opacity active:opacity-60"
+                style={
+                    separator && !expanded
+                        ? { borderBottom: '0.5px solid var(--separator)' }
+                        : {}
+                }
             >
-                <div className="flex items-center gap-3 min-w-0">
-                    <span className="shrink-0 w-7 h-7 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-xs font-bold flex items-center justify-center">
-                        {index}
-                    </span>
-                    <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                            ENEM {question.year} · Q.{question.index}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                            {DISCIPLINE_LABELS[question.discipline]} · Você:{' '}
-                            <strong className="text-red-500">
-                                {selectedAnswer}
-                            </strong>{' '}
-                            · Correto:{' '}
-                            <strong className="text-green-500">
-                                {question.correctAlternative}
-                            </strong>
-                        </p>
-                    </div>
-                </div>
-                <span className="text-gray-400 shrink-0 ml-2">
-                    {expanded ? '▲' : '▼'}
+                <span
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
+                    style={{
+                        background: 'rgba(255,59,48,0.12)',
+                        color: 'var(--red)',
+                    }}
+                >
+                    {index}
                 </span>
+                <div className="flex-1 py-2.5 min-w-0">
+                    <p
+                        className="text-[15px] leading-snug"
+                        style={{ color: 'var(--label)' }}
+                    >
+                        ENEM {question.year} · Q. {question.index}
+                    </p>
+                    <p
+                        className="text-[13px] mt-0.5"
+                        style={{ color: 'var(--secondary-label)' }}
+                    >
+                        {DISCIPLINE_LABELS[question.discipline]} ·{' '}
+                        <span style={{ color: 'var(--red)' }}>
+                            {selectedAnswer}
+                        </span>{' '}
+                        →{' '}
+                        <span style={{ color: 'var(--green)' }}>
+                            {question.correctAlternative}
+                        </span>
+                    </p>
+                </div>
+                <svg
+                    width="12"
+                    height="8"
+                    viewBox="0 0 12 8"
+                    fill="none"
+                    className="shrink-0 transition-transform duration-200"
+                    style={{
+                        transform: expanded
+                            ? 'rotate(180deg)'
+                            : 'rotate(0deg)',
+                    }}
+                >
+                    <path
+                        d="M1 1.5L6 6.5L11 1.5"
+                        stroke="var(--tertiary-label)"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                </svg>
             </button>
 
             {expanded && (
-                <div className="px-4 pb-4 space-y-4 border-t border-red-100 dark:border-red-900/30 pt-4">
+                <div
+                    className="px-4 pb-4 space-y-3"
+                    style={
+                        separator
+                            ? { borderBottom: '0.5px solid var(--separator)' }
+                            : {}
+                    }
+                >
+                    {/* Context snippet */}
                     {question.context && (
-                        <div className="text-xs text-gray-600 dark:text-gray-400 border-l-2 border-gray-200 dark:border-neutral-700 pl-3 leading-relaxed">
-                            {question.context.slice(0, 400)}
-                            {question.context.length > 400 ? '...' : ''}
+                        <div
+                            className="rounded-xl p-3 text-[13px] leading-relaxed"
+                            style={{
+                                background: `${color}0D`,
+                                color: 'var(--secondary-label)',
+                            }}
+                        >
+                            {question.context.slice(0, 300)}
+                            {question.context.length > 300 ? '…' : ''}
                         </div>
                     )}
 
-                    <div className="space-y-2">
-                        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40">
-                            <span className="shrink-0 w-5 h-5 rounded-full border-2 border-red-400 text-red-500 text-xs font-bold flex items-center justify-center">
-                                {selectedAnswer}
-                            </span>
-                            <p className="text-xs text-red-700 dark:text-red-300">
-                                {wrongAlt?.text ?? '—'}{' '}
-                                <span className="font-medium">(sua resposta)</span>
+                    {/* Wrong answer */}
+                    <div
+                        className="flex items-start gap-2.5 rounded-xl p-3"
+                        style={{
+                            background: 'rgba(255,59,48,0.08)',
+                        }}
+                    >
+                        <span
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
+                            style={{
+                                background: 'var(--red)',
+                                color: '#fff',
+                            }}
+                        >
+                            {selectedAnswer}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                            <p
+                                className="text-[12px] font-semibold mb-1"
+                                style={{ color: 'var(--red)' }}
+                            >
+                                Sua resposta
+                            </p>
+                            <p
+                                className="text-[13px] leading-relaxed"
+                                style={{ color: 'var(--label)' }}
+                            >
+                                {wrongAlt?.text ?? '—'}
                             </p>
                         </div>
+                    </div>
 
-                        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40">
-                            <span className="shrink-0 w-5 h-5 rounded-full border-2 border-green-500 text-green-600 text-xs font-bold flex items-center justify-center">
-                                {question.correctAlternative}
-                            </span>
-                            <p className="text-xs text-green-700 dark:text-green-300">
-                                {correctAlt?.text ?? '—'}{' '}
-                                <span className="font-medium">(correto)</span>
+                    {/* Correct answer */}
+                    <div
+                        className="flex items-start gap-2.5 rounded-xl p-3"
+                        style={{
+                            background: 'rgba(52,199,89,0.08)',
+                        }}
+                    >
+                        <span
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
+                            style={{
+                                background: 'var(--green)',
+                                color: '#fff',
+                            }}
+                        >
+                            {question.correctAlternative}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                            <p
+                                className="text-[12px] font-semibold mb-1"
+                                style={{ color: 'var(--green)' }}
+                            >
+                                Resposta correta
+                            </p>
+                            <p
+                                className="text-[13px] leading-relaxed"
+                                style={{ color: 'var(--label)' }}
+                            >
+                                {correctAlt?.text ?? '—'}
                             </p>
                             {correctAlt?.file && (
                                 <Image
@@ -384,7 +535,7 @@ function WrongQuestionCard({
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }
 
@@ -394,7 +545,7 @@ function buildReviewPrompt(
 ): string {
     const lines: string[] = [
         'Olá! Acabei de fazer um simulado do ENEM e preciso revisar os conteúdos em que errei.',
-        'Por favor, para cada questão abaixo, explique por que a alternativa correta está certa e por que a minha resposta estava errada. Em seguida, faça um resumo dos principais conteúdos que preciso estudar.',
+        'Para cada questão abaixo, explique por que a alternativa correta está certa e por que a minha resposta estava errada. Ao final, faça um resumo dos tópicos que preciso estudar.',
         '',
     ];
 
@@ -405,15 +556,19 @@ function buildReviewPrompt(
             a => a.letter === q.correctAlternative,
         );
 
-        lines.push(`--- Questão ${i + 1} (ENEM ${q.year}, Q.${q.index} — ${DISCIPLINE_LABELS[q.discipline]}) ---`);
-        if (q.context) {
-            lines.push(`Contexto: ${q.context.slice(0, 300)}${q.context.length > 300 ? '...' : ''}`);
-        }
-        if (q.alternativesIntroduction) {
+        lines.push(
+            `--- Questão ${i + 1} (ENEM ${q.year}, Q.${q.index} — ${DISCIPLINE_LABELS[q.discipline]}) ---`,
+        );
+        if (q.context)
+            lines.push(
+                `Contexto: ${q.context.slice(0, 300)}${q.context.length > 300 ? '…' : ''}`,
+            );
+        if (q.alternativesIntroduction)
             lines.push(`Enunciado: ${q.alternativesIntroduction}`);
-        }
         lines.push(`Minha resposta (${myAns}): ${myAlt?.text ?? '—'}`);
-        lines.push(`Resposta correta (${q.correctAlternative}): ${correctAlt?.text ?? '—'}`);
+        lines.push(
+            `Resposta correta (${q.correctAlternative}): ${correctAlt?.text ?? '—'}`,
+        );
         lines.push('');
     });
 
