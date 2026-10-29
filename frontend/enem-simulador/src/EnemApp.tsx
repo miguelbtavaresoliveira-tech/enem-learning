@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Eye,
 } from 'lucide-react';
+import { apiFetch, HttpError } from './simulado/api';
 
 /* -------------------------------------------------------------------------- */
 /*  Tipos (espelham o schema oficial da API: GET /v1/exams/{year}/questions)   */
@@ -49,8 +50,7 @@ interface QuestionsResponse {
 /*  Configuração e acesso à API                                               */
 /* -------------------------------------------------------------------------- */
 
-const API_URL = import.meta.env.VITE_ENEM_API_URL ?? '/v1';
-const PAGE_SIZE = 10; // questões por requisição (a API limita a 1 req/s)
+const PAGE_SIZE = 10;
 const PREFETCH_AHEAD = 3; // carrega a próxima página quando faltam N questões
 const YEARS = [2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015, 2014, 2013, 2012, 2011, 2010, 2009];
 
@@ -63,26 +63,14 @@ const DISCIPLINES: Record<string, string> = {
 
 class ApiError extends Error {}
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function fetchPage(year: number, offset: number, attempt = 0): Promise<QuestionsResponse> {
-  let res: Response;
+async function fetchPage(year: number, offset: number): Promise<QuestionsResponse> {
+  let data: QuestionsResponse;
   try {
-    res = await fetch(`${API_URL}/exams/${year}/questions?limit=${PAGE_SIZE}&offset=${offset}`);
-  } catch {
-    throw new ApiError('Não foi possível conectar à API. Verifique sua internet e tente novamente.');
+    data = await apiFetch<QuestionsResponse>(`/exams/${year}/questions?limit=${PAGE_SIZE}&offset=${offset}`);
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 404) throw new ApiError(`A prova de ${year} não foi encontrada na API.`);
+    throw new ApiError(e instanceof Error ? e.message : 'Erro ao acessar a API.');
   }
-
-  // Limite da API: 1 req/s. Espera e tenta de novo automaticamente.
-  if (res.status === 429 && attempt < 3) {
-    await sleep(1500 * (attempt + 1));
-    return fetchPage(year, offset, attempt + 1);
-  }
-  if (res.status === 404) throw new ApiError(`A prova de ${year} não foi encontrada na API.`);
-  if (res.status === 429) throw new ApiError('Muitas requisições seguidas. Aguarde alguns segundos e tente novamente.');
-  if (!res.ok) throw new ApiError(`A API respondeu com erro ${res.status}. Tente novamente em instantes.`);
-
-  const data = (await res.json()) as QuestionsResponse;
   if (!data || !Array.isArray(data.questions) || !data.metadata) {
     throw new ApiError('Resposta inesperada da API.');
   }

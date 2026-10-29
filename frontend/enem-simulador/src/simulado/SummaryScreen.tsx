@@ -1,8 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SimuladoSession, SimuladoResult, WrongAnswer, DisciplineScore, Discipline, Letter, Question } from './types';
 import { ALL_DISCIPLINES, DISCIPLINE_LABELS, DISCIPLINE_COLORS } from './types';
 import { TopNav, ScoreRing } from './ui';
 import { markSeen, saveResult } from './storage';
+import { QuestionStatement, AlternativeBody } from './QuestionContent';
+
+function previewText(w: WrongAnswer): string {
+  const plain = (w.alternativesIntroduction || w.context || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/[*_#>`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!plain) return 'Questão com imagem — toque para ver completa';
+  return plain.length > 120 ? `${plain.slice(0, 120)}…` : plain;
+}
 
 // MD3 tokens
 const C = {
@@ -53,10 +64,9 @@ function copyText(text: string, onDone: () => void) {
 
 type WrongItem = WrongAnswer;
 
-/** Strips markdown image tags and trims to maxLen chars for prompt readability */
-function stripImages(text: string | null, maxLen = 600): string {
+function stripImages(text: string | null): string {
   if (!text) return '';
-  return text.replace(/!\[.*?\]\(.*?\)/g, '[imagem]').slice(0, maxLen);
+  return text.replace(/!\[.*?\]\(.*?\)/g, '[imagem]');
 }
 
 /** Builds a single-question block for the study-plan prompt */
@@ -191,18 +201,7 @@ function WrongAnswerModal({
             </div>
           ) : (
             <>
-              {q.context && (
-                <div style={{ background: C.surfaceContainerLow, borderRadius: 8, padding: '14px 18px', marginBottom: 14, fontSize: 15, lineHeight: 1.7, color: C.onSurface, border: `1px solid ${C.outlineVariant}` }}>
-                  {q.context}
-                </div>
-              )}
-              {q.files?.map((url, fi) => (
-                <img key={fi} src={url} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: 8 }} />
-              ))}
-              <div style={{ fontSize: 16, lineHeight: 1.75, color: C.onSurface, marginBottom: 16 }}>{q.title}</div>
-              {q.alternativesIntroduction && (
-                <div style={{ fontSize: 13, color: C.onSurfaceVariant, marginBottom: 10 }}>{q.alternativesIntroduction}</div>
-              )}
+              <QuestionStatement question={q} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {q.alternatives.map(alt => {
                   const isCorrect = alt.isCorrect;
@@ -214,11 +213,8 @@ function WrongAnswerModal({
                   else if (isSelected) { bg = 'rgba(255,218,214,0.4)'; border = `2px solid ${C.error}`; color = C.error; }
                   return (
                     <div key={alt.letter} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: bg, border, borderRadius: 8, color }}>
-                      <span style={{ fontWeight: 700, fontSize: 14, flexShrink: 0, width: 20 }}>{alt.letter}</span>
-                      <div style={{ fontSize: 14, lineHeight: 1.6 }}>
-                        {alt.text}
-                        {alt.file && <img src={alt.file} alt="" style={{ maxWidth: '100%', borderRadius: 6, marginTop: 4 }} />}
-                      </div>
+                      <span style={{ fontWeight: 700, fontSize: 14, flexShrink: 0, width: 20, paddingTop: 3 }}>{alt.letter}</span>
+                      <AlternativeBody alt={alt} />
                     </div>
                   );
                 })}
@@ -367,7 +363,7 @@ export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
                       >
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 12, color: C.outline, marginBottom: 2 }}>ENEM {w.year} · Questão {w.index}</div>
-                          <div style={{ fontSize: 14, color: C.onSurface, lineHeight: 1.4 }}>{w.title.slice(0, 100)}{w.title.length > 100 ? '…' : ''}</div>
+                          <div style={{ fontSize: 14, color: C.onSurface, lineHeight: 1.4 }}>{previewText(w)}</div>
                           <div style={{ fontSize: 12, marginTop: 4, display: 'flex', gap: 10 }}>
                             <span style={{ color: C.error }}>{w.selected ? <>Marquei: <strong>{w.selected}</strong></> : <em>Em branco</em>}</span>
                             <span style={{ color: C.secondary }}>Correto: <strong>{w.correct}</strong></span>

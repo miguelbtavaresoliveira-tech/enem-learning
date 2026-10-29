@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SimuladoConfig, SimuladoSession, QuestionRef, Question, Letter } from './types';
+import type { SimuladoConfig, SimuladoSession, Question, Letter } from './types';
 import { DISCIPLINE_COLORS, DISCIPLINE_LABELS } from './types';
 import { NavTextBtn, ProgressBar } from './ui';
-import { fetchSimuladoQuestions } from './api';
+import { loadSimuladoQuestions } from './api';
+import { QuestionStatement, AlternativeBody } from './QuestionContent';
 import { saveSession, getSeenIds } from './storage';
 
 // MD3 tokens
@@ -120,6 +121,8 @@ function AnswerCard({
 export function ExamScreen({ config, onFinish, onBack }: Props) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [retryKey, setRetryKey] = useState(0);
+  const [loadProgress, setLoadProgress] = useState({ done: 0, total: 1 });
+  const startedKeyRef = useRef<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [session, setSession] = useState<SimuladoSession | null>(null);
   const [current, setCurrent] = useState(0);
@@ -138,11 +141,16 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   }, [phase]);
 
   useEffect(() => {
+    // StrictMode runs effects twice in dev; a second run would double the API calls.
+    if (startedKeyRef.current === retryKey) return;
+    startedKeyRef.current = retryKey;
+
     async function init() {
       setPhase('loading');
+      setLoadProgress({ done: 0, total: 1 });
       try {
         const seenIds = config.onlyNew ? getSeenIds() : new Set<string>();
-        const questions = await fetchSimuladoQuestions(config, seenIds);
+        const questions = await loadSimuladoQuestions(config, seenIds, (done, total) => setLoadProgress({ done, total }));
         if (questions.length === 0) throw new Error('Nenhuma questão encontrada com esses filtros.');
 
         const loadedQuestions: Record<string, Question> = {};
@@ -230,10 +238,11 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   if (phase === 'loading') {
     return (
       <div style={{ minHeight: '100dvh', background: C.surface, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24 }}>
-        <div style={{ fontSize: 17, color: C.onSurface, fontWeight: 500 }}>Preparando questões…</div>
+        <div style={{ fontSize: 17, color: C.onSurface, fontWeight: 500 }}>Baixando questões da API oficial do ENEM…</div>
         <div style={{ width: '100%', maxWidth: 320 }}>
-          <ProgressBar value={50} color={C.primaryContainer} />
+          <ProgressBar value={loadProgress.total > 0 ? (loadProgress.done / loadProgress.total) * 100 : 0} color={C.primaryContainer} />
         </div>
+        <div style={{ fontSize: 14, color: C.onSurfaceVariant }}>{loadProgress.done} / {loadProgress.total} requisições</div>
       </div>
     );
   }
@@ -303,7 +312,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
                 <span style={{ fontSize: 13, fontWeight: 500, color: C.onSurfaceVariant }}>
                   {DISCIPLINE_LABELS[currentRef.discipline]}
                 </span>
-                <span style={{ fontSize: 12, color: C.outline }}>· ENEM {currentRef.year}</span>
+                <span style={{ fontSize: 12, color: C.outline }}>· ENEM {currentRef.year} · Q{currentRef.index}</span>
               </div>
             )}
 
@@ -401,27 +410,7 @@ function QuestionCard({ question, selected, revealed, onAnswer }: {
 }) {
   return (
     <div>
-      {question.context && (
-        <div style={{
-          background: C.surfaceContainerLow, borderRadius: 8,
-          padding: '16px 20px', marginBottom: 16,
-          fontSize: 16, lineHeight: 1.75, color: C.onSurface,
-          border: `1px solid ${C.outlineVariant}`,
-        }}>
-          {question.context}
-        </div>
-      )}
-      {/* T-05: files shown only when URL not already in context markdown */}
-      {question.files?.filter(url => !question.context?.includes(url)).map((url, i) => (
-        <img key={i} src={url} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: 8 }} />
-      ))}
-      {/* T-05: show title only as small metadata, not as enunciado */}
-      <div style={{ fontSize: 12, color: C.outline, marginBottom: 8 }}>
-        ENEM {question.year} · Q{question.index}
-      </div>
-      {question.alternativesIntroduction && (
-        <div style={{ fontSize: 14, color: C.onSurfaceVariant, marginBottom: 10 }}>{question.alternativesIntroduction}</div>
-      )}
+      <QuestionStatement question={question} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {question.alternatives.map(alt => {
           const isSelected = selected === alt.letter;
@@ -458,10 +447,7 @@ function QuestionCard({ question, selected, revealed, onAnswer }: {
                 fontSize: 13, fontWeight: 700,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>{alt.letter}</span>
-              <div style={{ fontSize: 15, lineHeight: 1.6, paddingTop: 3 }}>
-                {alt.text}
-                {alt.file && <img src={alt.file} alt="" style={{ maxWidth: '100%', borderRadius: 6, marginTop: 6 }} />}
-              </div>
+              <AlternativeBody alt={alt} />
             </button>
           );
         })}

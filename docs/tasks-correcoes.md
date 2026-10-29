@@ -212,6 +212,65 @@ Questões com menos de 5 alternativas ou alternativas sem texto e sem imagem:
 
 ---
 
+## Layout e design (D-xx)
+
+> Baseado nos mockups HTML em `docs/tela-inicio.md`, `docs/configuracao-simulado.md` e `docs/tela-questao.md` (Tailwind + tokens MD3 + Material Symbols). Só documentação — não implementado ainda.
+
+### D-01 · P1 · Base global
+**Arquivos:** `frontend/enem-simulador/index.html`, `src/index.css`
+- `index.html` tem `lang="en"` e título `enem-simulador`. Mockup pede `lang="pt-BR"` e título "ENEM Estudos".
+- Nenhuma fonte Inter nem Material Symbols é carregada. Mockup usa ambas via Google Fonts / CDN.
+- Emojis (🎯 ✅ 📋 🕐 🏛 🔬 📖 📐) substituem ícones Material Symbols em todo o app.
+- Os tokens de design (escala tipográfica `body-enunciado 16/28`, `headline-*`, `label-*`, espaçamentos `space-*`, raios `lg=4px`/`xl=8px`) estão espalhados como `inline styles`. Deveriam ser variáveis CSS ou tokens no `@theme` do Tailwind v4 em `index.css`.
+- **Aceite:** `index.html` com `lang="pt-BR"`, Inter + Material Symbols carregados, tokens centralizados, todos os emojis substituídos por `<span class="material-symbols-…">`.
+
+### D-02 · P1 · Shell global (header + footer)
+**Arquivos:** `src/App.tsx`, cada `*Screen.tsx`
+- Cada tela tem o próprio `TopNav` sem consistência. Não há footer global.
+- Mockup pede header fixo com logo "ENEM Estudos", nav (Início, Provas Anteriores, Simulados, Redação, Desempenho), item ativo sublinhado, chip "Meta", ícone de ajuda e avatar.
+- Footer padrão presente em todas as telas.
+- **Aceite:** componente `AppShell` com `<Header>` e `<Footer>` envolvendo o conteúdo de cada rota; `TopNav` individuais removidos.
+
+### D-03 · P2 · Tela Inicial
+**Arquivo:** `src/App.tsx`
+- Não tem: hero com badge "Ambiente de Preparação Acadêmica", card de índice TRI, faixa "Recomendação de Foco Diário" com Pomodoro, tiles (Padrão INEP, Calibragem, Sem Distrações).
+- Cards de Prova Completa e Simulado Personalizado existem, mas sem a barra de progresso nem o badge "Recomendado" + 2 métricas.
+- **Aceite:** layout idêntico ao mockup `tela-inicio.md`, responsivo.
+
+### D-04 · P1 · Configuração do Simulado
+**Arquivos:** `src/simulado/SetupScreen.tsx`, `src/simulado/ui.tsx`
+- Sub-header "← Início · Configuração de Simulado · Histórico de Simulados" ausente.
+- Contador "N selecionadas" ausente.
+- "Anos de Prova": segmentado Todos/Últimos 3/Últimos 5 está embaixo das disciplinas; mockup quer no **topo direito**. Chips são arredondados; mockup quer raio 4 px, cor ativo `#EFF6FF`/`#1D4ED8`.
+- Volume de Questões e Dificuldade estão empilhados; mockup quer **lado a lado** (grid 2 colunas), botões `h-11` em grid de 7, texto "~N min estimados" (3 min/item).
+- "Diretrizes da Sessão": switch atual é redondo azul iOS; mockup quer **retangular 38×20, verde `#15803D`**. Badge "3 min / item" no cronômetro ausente.
+- CTA "Começar Simulado →" + nota com ícone cadeado ausente.
+- **Aceite:** layout e componentes idênticos ao mockup `configuracao-simulado.md`.
+
+### D-05 · P1 · Tela da Questão
+**Arquivo:** `src/simulado/ExamScreen.tsx`
+- Sub-header sticky com barra de 2 px, "Questão X de N · Y% concluído" e chip do cronômetro com ícone `schedule` está ausente (existe uma `TopNav` simples).
+- Linha de metadados: chip de disciplina + "ENEM ano" à esquerda; ID e selo à direita — não diferenciados.
+- Enunciado não está num `<article>` com `border` + `p-6 md:p-8`.
+- Comando (`alternativesIntroduction`) não usa `headline-sm`.
+- Estado selecionado das alternativas não mostra "Sua escolha" conforme o mockup.
+- Rodapé de navegação é uma barra fixa; mockup quer **dentro do fluxo da página**.
+- **"Marcar para revisão"** não existe — deve ser adicionado e refletido no cartão-resposta.
+- **Aceite:** layout de `tela-questao.md`, rodapé no fluxo, botão de revisão funcional.
+
+### D-06 · P2 · Resultado e Histórico
+**Arquivos:** `src/simulado/SummaryScreen.tsx`, `src/simulado/HistoryScreen.tsx`
+- Sem mockup formal. `HistoryScreen` usa variáveis CSS inexistentes (ver T-14).
+- Alinhar ao shell global (D-02) e tokens do D-01.
+- **Aceite:** mesmos tokens, sem variáveis CSS indefinidas, shell aplicado.
+
+### D-07 · P2 · Responsivo
+**Arquivos:** globais
+- Sem gutter de 16 px no mobile em várias telas. Algumas telas causam rolagem horizontal em viewport < 640 px. Nav não colapsa abaixo de `lg`.
+- **Aceite:** zero rolagem horizontal em 375 px, gutter `margin-mobile` aplicado, nav colapsada em mobile.
+
+---
+
 ## Ordem sugerida
 
 1. T-01 → T-03 → T-02 → T-04 (as questões voltam a vir do `public` e sempre carregam)
