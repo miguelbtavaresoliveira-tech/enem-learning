@@ -88,13 +88,28 @@ export interface DisciplineScore {
   total: number;
 }
 
+export interface WrongAnswer {
+  questionId: string;
+  year: number;
+  index: number;
+  discipline: Discipline;
+  /** null = left blank */
+  selected: Letter | null;
+  correct: Letter;
+  title: string;
+  context: string | null;
+  alternativesIntroduction: string | null;
+  alternatives: Array<{ letter: Letter; text: string | null }>;
+  hasImage: boolean;
+}
+
 export interface SimuladoResult {
   id: string;
   config: SimuladoConfig;
   totalQuestions: number;
   correct: number;
   disciplineScores: DisciplineScore[];
-  wrongAnswers: Array<{ questionId: string; year: number; index: number; discipline: Discipline; selected: Letter; correct: Letter; title: string }>;
+  wrongAnswers: WrongAnswer[];
   startedAt: string;
   finishedAt: string;
   elapsedSeconds: number;
