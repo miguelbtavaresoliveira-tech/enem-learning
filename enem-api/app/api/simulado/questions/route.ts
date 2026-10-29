@@ -67,9 +67,12 @@ export async function POST(request: NextRequest) {
             if (!exam) continue;
 
             for (const d of disciplines) {
-                const disciplineQuestions = exam.questions.filter(
-                    q => q.discipline === d,
-                );
+                // T-03: pick a single language for foreign-language questions to avoid duplicates
+        const defaultLang = exam.languages?.length > 0 ? exam.languages[0].value : null;
+
+        const disciplineQuestions = exam.questions
+            .filter(q => q.discipline === d)
+            .filter(q => !q.language || q.language === defaultLang);
 
                 const [start, end] = getDifficultyRange(
                     disciplineQuestions.length,
@@ -78,7 +81,7 @@ export async function POST(request: NextRequest) {
                 const inRange = disciplineQuestions.slice(start, end);
 
                 for (const q of inRange) {
-                    const id = `${year}-${q.index}`;
+                    const id = `${year}-${q.index}-${q.language ?? 'none'}`;
                     if (onlyNew && seenSet.has(id)) continue;
                     candidatesByDiscipline[d].push({
                         year,
