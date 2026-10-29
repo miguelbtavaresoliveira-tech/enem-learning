@@ -1,6 +1,6 @@
-import type { Discipline, QuestionRef, Question, DifficultyLevel } from './types';
+import type { Discipline, QuestionRef, Question, DifficultyLevel, SimuladoConfig } from './types';
 
-const BASE = 'https://api.enem.dev/v1';
+const BASE = import.meta.env.VITE_ENEM_API_URL ?? '/v1';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -92,6 +92,30 @@ export async function buildQuestionRefs(
   });
 
   return shuffle(selected);
+}
+
+export async function fetchSimuladoQuestions(
+  config: Pick<SimuladoConfig, 'years' | 'disciplines' | 'questionCount' | 'onlyNew' | 'difficulty'>,
+  seenIds: Set<string>,
+): Promise<Question[]> {
+  const res = await fetch('/api/simulado/questions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      years: config.years,
+      disciplines: config.disciplines,
+      questionCount: config.questionCount,
+      onlyNew: config.onlyNew,
+      seenIds: Array.from(seenIds),
+      difficulty: config.difficulty,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? `Erro ${res.status} ao gerar simulado`);
+  }
+  const data = await res.json() as { questions: Question[] };
+  return data.questions;
 }
 
 export async function fetchQuestion(ref: QuestionRef): Promise<Question> {

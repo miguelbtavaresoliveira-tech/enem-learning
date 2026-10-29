@@ -49,7 +49,7 @@ interface QuestionsResponse {
 /*  Configuração e acesso à API                                               */
 /* -------------------------------------------------------------------------- */
 
-const API_URL = 'https://api.enem.dev/v1';
+const API_URL = import.meta.env.VITE_ENEM_API_URL ?? '/v1';
 const PAGE_SIZE = 10; // questões por requisição (a API limita a 1 req/s)
 const PREFETCH_AHEAD = 3; // carrega a próxima página quando faltam N questões
 const YEARS = [2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015, 2014, 2013, 2012, 2011, 2010, 2009];

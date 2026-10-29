@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SimuladoConfig, SimuladoSession, QuestionRef, Question, Letter } from './types';
 import { DISCIPLINE_COLORS, DISCIPLINE_LABELS } from './types';
 import { NavTextBtn, ProgressBar } from './ui';
-import { buildQuestionRefs, fetchQuestion } from './api';
+import { fetchSimuladoQuestions } from './api';
 import { saveSession, getSeenIds } from './storage';
 
 // MD3 tokens
@@ -36,8 +36,6 @@ interface Props {
   onFinish: (session: SimuladoSession) => void;
   onBack: () => void;
 }
-
-const PREFETCH = 2;
 
 /* ---- Answer card ---- */
 function AnswerCard({
@@ -121,7 +119,7 @@ function AnswerCard({
 
 export function ExamScreen({ config, onFinish, onBack }: Props) {
   const [phase, setPhase] = useState<Phase>('loading');
-  const [loadProgress, setLoadProgress] = useState({ done: 0, total: 1 });
+  const [retryKey, setRetryKey] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const [session, setSession] = useState<SimuladoSession | null>(null);
   const [current, setCurrent] = useState(0);
@@ -130,34 +128,42 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
   const sessionRef = useRef<SimuladoSession | null>(null);
+  const finishedRef = useRef(false);
 
+  // Timer starts only when exam is ready (T-12)
   useEffect(() => {
+    if (phase !== 'exam') return;
     timerRef.current = window.setInterval(() => setElapsed(e => e + 1), 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, []);
+  }, [phase]);
 
   useEffect(() => {
     async function init() {
+      setPhase('loading');
       try {
         const seenIds = config.onlyNew ? getSeenIds() : new Set<string>();
-        const refs = await buildQuestionRefs(
-          config.years, config.disciplines, config.questionCount,
-          config.difficulty, config.onlyNew, seenIds,
-          (done, total) => setLoadProgress({ done, total }),
-        );
-        if (refs.length === 0) throw new Error('Nenhuma questão encontrada com esses filtros.');
+        const questions = await fetchSimuladoQuestions(config, seenIds);
+        if (questions.length === 0) throw new Error('Nenhuma questão encontrada com esses filtros.');
+
+        const loadedQuestions: Record<string, Question> = {};
+        for (const q of questions) loadedQuestions[q.id] = q;
+
         const sess: SimuladoSession = {
           id: `${Date.now()}`,
           config,
-          questionRefs: refs,
-          loadedQuestions: {},
+          questionRefs: questions.map(q => ({
+            year: q.year,
+            index: q.index,
+            discipline: q.discipline,
+            language: q.language,
+          })),
+          loadedQuestions,
           answers: {},
           startedAt: new Date().toISOString(),
         };
         sessionRef.current = sess;
         setSession(sess);
         setPhase('exam');
-        prefetchAhead(sess, 0);
       } catch (e) {
         setErrorMsg(e instanceof Error ? e.message : 'Erro ao carregar questões.');
         setPhase('error');
@@ -165,28 +171,9 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
     }
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [retryKey]);
 
-  const prefetchAhead = useCallback(async (sess: SimuladoSession, idx: number) => {
-    for (let i = idx; i <= Math.min(idx + PREFETCH, sess.questionRefs.length - 1); i++) {
-      const ref = sess.questionRefs[i];
-      const id = `${ref.year}-${ref.index}`;
-      if (sess.loadedQuestions[id]) continue;
-      try {
-        const q = await fetchQuestion(ref);
-        setSession(s => {
-          if (!s) return s;
-          const updated = { ...s, loadedQuestions: { ...s.loadedQuestions, [id]: q } };
-          sessionRef.current = updated;
-          saveSession(updated);
-          return updated;
-        });
-      } catch { /* skip */ }
-    }
-  }, []);
-
-  const currentRef: QuestionRef | null = session ? session.questionRefs[current] ?? null : null;
-  const currentId = currentRef ? `${currentRef.year}-${currentRef.index}` : '';
+  const currentId = session ? `${session.questionRefs[current]?.year}-${session.questionRefs[current]?.index}` : '';
   const currentQ: Question | null = session?.loadedQuestions[currentId] ?? null;
 
   const navigate = (idx: number) => {
@@ -194,7 +181,6 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
     if (idx < 0 || idx >= session.questionRefs.length) return;
     setCurrent(idx);
     setSheetOpen(false);
-    prefetchAhead(session, idx);
   };
 
   const answer = (letter: Letter) => {
@@ -215,6 +201,8 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') navigate(current + 1);
       if (e.key === 'ArrowLeft') navigate(current - 1);
+      // T-11: block letter keys after answer is revealed
+      if (revealed[currentId]) return;
       const letters: Letter[] = ['A', 'B', 'C', 'D', 'E'];
       const idx = letters.indexOf(e.key.toUpperCase() as Letter);
       if (idx >= 0 && currentQ && currentQ.alternatives[idx]) answer(letters[idx]);
@@ -224,7 +212,8 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   });
 
   const handleFinish = () => {
-    if (!session) return;
+    if (!session || finishedRef.current) return;
+    finishedRef.current = true;
     onFinish({ ...session, finishedAt: new Date().toISOString() });
   };
 
@@ -233,19 +222,18 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
     ? `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`
     : `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
 
+  // T-12: use ref to prevent double-fire from StrictMode
   useEffect(() => {
-    if (config.timerEnabled && elapsed >= config.timerMinutes * 60) handleFinish();
+    if (phase === 'exam' && config.timerEnabled && elapsed >= config.timerMinutes * 60) handleFinish();
   });
 
   if (phase === 'loading') {
-    const pct = loadProgress.total > 0 ? (loadProgress.done / loadProgress.total) * 100 : 0;
     return (
       <div style={{ minHeight: '100dvh', background: C.surface, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24 }}>
         <div style={{ fontSize: 17, color: C.onSurface, fontWeight: 500 }}>Preparando questões…</div>
         <div style={{ width: '100%', maxWidth: 320 }}>
-          <ProgressBar value={pct} color={C.primaryContainer} />
+          <ProgressBar value={50} color={C.primaryContainer} />
         </div>
-        <div style={{ fontSize: 14, color: C.onSurfaceVariant }}>{loadProgress.done} / {loadProgress.total} anos carregados</div>
       </div>
     );
   }
@@ -254,7 +242,13 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
     return (
       <div style={{ minHeight: '100dvh', background: C.surface, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}>
         <div style={{ fontSize: 17, color: C.error, textAlign: 'center' }}>{errorMsg}</div>
-        <button onClick={onBack} style={{ color: C.primary, background: 'none', border: 'none', fontSize: 17, cursor: 'pointer' }}>Voltar</button>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button onClick={onBack} style={{ color: C.onSurfaceVariant, background: 'none', border: `1px solid ${C.outlineVariant}`, borderRadius: 8, padding: '10px 20px', fontSize: 15, cursor: 'pointer' }}>Voltar</button>
+          <button onClick={() => { finishedRef.current = false; setErrorMsg(''); setRetryKey(k => k + 1); }}
+            style={{ color: C.onPrimary, background: C.primaryContainer, border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
+            Tentar novamente
+          </button>
+        </div>
       </div>
     );
   }
@@ -264,6 +258,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   const totalQ = session.questionRefs.length;
   const answered = Object.keys(session.answers).length;
   const progressPct = totalQ > 1 ? (current / (totalQ - 1)) * 100 : 100;
+  const currentRef = session.questionRefs[current] ?? null;
   const discColor = currentRef ? DISCIPLINE_COLORS[currentRef.discipline] : C.primary;
 
   return (
@@ -416,11 +411,13 @@ function QuestionCard({ question, selected, revealed, onAnswer }: {
           {question.context}
         </div>
       )}
-      {question.files?.map((url, i) => (
+      {/* T-05: files shown only when URL not already in context markdown */}
+      {question.files?.filter(url => !question.context?.includes(url)).map((url, i) => (
         <img key={i} src={url} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: 8 }} />
       ))}
-      <div style={{ fontSize: 16, lineHeight: 1.75, color: C.onSurface, marginBottom: 20, letterSpacing: '-0.005em' }}>
-        {question.title}
+      {/* T-05: show title only as small metadata, not as enunciado */}
+      <div style={{ fontSize: 12, color: C.outline, marginBottom: 8 }}>
+        ENEM {question.year} · Q{question.index}
       </div>
       {question.alternativesIntroduction && (
         <div style={{ fontSize: 14, color: C.onSurfaceVariant, marginBottom: 10 }}>{question.alternativesIntroduction}</div>
