@@ -1,8 +1,30 @@
 import { useEffect, useState } from 'react';
-import type { SimuladoSession, SimuladoResult, DisciplineScore, Discipline } from './types';
+import type { SimuladoSession, SimuladoResult, DisciplineScore, Discipline, Letter, Question } from './types';
 import { ALL_DISCIPLINES, DISCIPLINE_LABELS, DISCIPLINE_COLORS } from './types';
-import { AppleNav, ScoreRing, AppleBtn } from './ui';
+import { TopNav, ScoreRing } from './ui';
 import { markSeen, saveResult } from './storage';
+
+// MD3 tokens
+const C = {
+  primary: '#0037b0',
+  primaryContainer: '#1d4ed8',
+  primaryFixed: '#dce1ff',
+  onPrimary: '#ffffff',
+  secondary: '#006d30',
+  secondaryContainer: '#92f5a4',
+  onSecondary: '#ffffff',
+  error: '#ba1a1a',
+  errorContainer: '#ffdad6',
+  onError: '#ffffff',
+  surface: '#faf8ff',
+  surfaceLowest: '#ffffff',
+  surfaceContainerLow: '#f2f3ff',
+  surfaceContainer: '#eaedff',
+  onSurface: '#131b2e',
+  onSurfaceVariant: '#434655',
+  outlineVariant: '#c4c5d7',
+  outline: '#747686',
+};
 
 interface Props {
   session: SimuladoSession;
@@ -10,63 +32,252 @@ interface Props {
   onHistory: () => void;
 }
 
-export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+/* ---- Clipboard helper ---- */
+function copyText(text: string, onDone: () => void) {
+  const doFallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand('copy'); onDone(); } catch { /* noop */ }
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(onDone).catch(doFallback);
+  } else {
+    doFallback();
+  }
+}
+
+type WrongItem = SimuladoResult['wrongAnswers'][number];
+
+function makePrompt(w: WrongItem): string {
+  return `Errei a questão ${w.index} do ENEM ${w.year} (${DISCIPLINE_LABELS[w.discipline]}). O enunciado é: "${w.title.slice(0, 300)}". A resposta correta é a alternativa ${w.correct}, mas marquei ${w.selected}. Me explique por que a alternativa ${w.correct} é a correta e o raciocínio por trás.`;
+}
+
+/* ---- Wrong answer overlay modal ---- */
+function WrongAnswerModal({
+  wrongs,
+  startIdx,
+  session,
+  onClose,
+}: {
+  wrongs: WrongItem[];
+  startIdx: number;
+  session: SimuladoSession;
+  onClose: () => void;
+}) {
+  const [idx, setIdx] = useState(startIdx);
   const [copied, setCopied] = useState(false);
+  const w = wrongs[idx];
+  const q: Question | undefined = w ? session.loadedQuestions[w.questionId] : undefined;
+  const discColor = w ? DISCIPLINE_COLORS[w.discipline] : C.primary;
+  const discLabel = w ? DISCIPLINE_LABELS[w.discipline] : '';
+
+  const handleCopy = () => {
+    if (!w) return;
+    copyText(makePrompt(w), () => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose]);
+
+  if (!w) return null;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(19,27,46,0.55)', zIndex: 100, backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
+      />
+
+      {/* Card */}
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          position: 'fixed', inset: '12px', zIndex: 101, maxWidth: 760, margin: '0 auto',
+          background: C.surfaceLowest, borderRadius: 12,
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          border: `1px solid ${C.outlineVariant}`,
+          boxShadow: '0 24px 64px rgba(0,0,0,0.22)',
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 20px', borderBottom: `1px solid ${C.outlineVariant}`, flexShrink: 0,
+          background: C.surfaceContainerLow,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 4, height: 18, borderRadius: 2, background: discColor }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: discColor }}>{discLabel}</span>
+            <span style={{ fontSize: 13, color: C.outline }}>· ENEM {w.year} · Q{w.index}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button onClick={handleCopy} style={{
+              background: 'none', border: `1px solid ${C.outlineVariant}`, borderRadius: 6,
+              padding: '4px 10px', color: C.primary, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+            }}>
+              {copied ? '✓ Copiado' : '📋 Copiar prompt de estudo'}
+            </button>
+            <button onClick={onClose} style={{
+              background: 'none', border: 'none', fontSize: 22, lineHeight: 1,
+              color: C.onSurfaceVariant, cursor: 'pointer',
+            }}>×</button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+          {/* Answer verdict */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+            <div style={{ padding: '6px 14px', borderRadius: 6, background: C.errorContainer, border: `1px solid ${C.error}`, fontSize: 14, color: C.error }}>
+              Marquei: <strong>{w.selected}</strong>
+            </div>
+            <div style={{ padding: '6px 14px', borderRadius: 6, background: C.secondaryContainer, border: `1px solid ${C.secondary}`, fontSize: 14, color: C.secondary }}>
+              Correto: <strong>{w.correct}</strong>
+            </div>
+          </div>
+
+          {!q ? (
+            <div style={{ color: C.onSurfaceVariant, padding: 24, textAlign: 'center' }}>
+              Questão não carregada durante o simulado.
+            </div>
+          ) : (
+            <>
+              {q.context && (
+                <div style={{ background: C.surfaceContainerLow, borderRadius: 8, padding: '14px 18px', marginBottom: 14, fontSize: 15, lineHeight: 1.7, color: C.onSurface, border: `1px solid ${C.outlineVariant}` }}>
+                  {q.context}
+                </div>
+              )}
+              {q.files?.map((url, fi) => (
+                <img key={fi} src={url} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: 8 }} />
+              ))}
+              <div style={{ fontSize: 16, lineHeight: 1.75, color: C.onSurface, marginBottom: 16 }}>{q.title}</div>
+              {q.alternativesIntroduction && (
+                <div style={{ fontSize: 13, color: C.onSurfaceVariant, marginBottom: 10 }}>{q.alternativesIntroduction}</div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {q.alternatives.map(alt => {
+                  const isCorrect = alt.isCorrect;
+                  const isSelected = w.selected === alt.letter;
+                  let bg: string = C.surface;
+                  let border: string = `1px solid ${C.outlineVariant}`;
+                  let color: string = C.onSurface;
+                  if (isCorrect) { bg = 'rgba(146,245,164,0.2)'; border = `2px solid ${C.secondary}`; color = '#004d22'; }
+                  else if (isSelected) { bg = 'rgba(255,218,214,0.4)'; border = `2px solid ${C.error}`; color = C.error; }
+                  return (
+                    <div key={alt.letter} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: bg, border, borderRadius: 8, color }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, flexShrink: 0, width: 20 }}>{alt.letter}</span>
+                      <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+                        {alt.text}
+                        {alt.file && <img src={alt.file} alt="" style={{ maxWidth: '100%', borderRadius: 6, marginTop: 4 }} />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer navigation */}
+        <div style={{
+          display: 'flex', gap: 12, padding: '12px 20px',
+          borderTop: `1px solid ${C.outlineVariant}`, flexShrink: 0, alignItems: 'center',
+          paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
+          background: C.surfaceContainerLow,
+        }}>
+          <button onClick={() => setIdx(i => Math.max(0, i - 1))} disabled={idx === 0} style={{
+            flex: 1, padding: '10px 0', borderRadius: 8,
+            border: `1px solid ${idx === 0 ? C.outlineVariant : C.outline}`,
+            background: C.surfaceLowest, color: idx === 0 ? C.outline : C.onSurface,
+            fontSize: 14, fontWeight: 500, cursor: idx === 0 ? 'not-allowed' : 'pointer',
+          }}>← Anterior</button>
+          <span style={{ fontSize: 13, color: C.onSurfaceVariant, whiteSpace: 'nowrap', minWidth: 48, textAlign: 'center' }}>{idx + 1} / {wrongs.length}</span>
+          <button onClick={() => setIdx(i => Math.min(wrongs.length - 1, i + 1))} disabled={idx === wrongs.length - 1} style={{
+            flex: 1, padding: '10px 0', borderRadius: 8, border: 'none',
+            background: idx === wrongs.length - 1 ? C.outlineVariant : C.primaryContainer,
+            color: C.onPrimary, fontSize: 14, fontWeight: 600,
+            cursor: idx === wrongs.length - 1 ? 'not-allowed' : 'pointer',
+          }}>Próxima →</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
+  const [copiedAll, setCopiedAll] = useState(false);
+  const [modalState, setModalState] = useState<{ open: boolean; idx: number }>({ open: false, idx: 0 });
   const [result] = useState<SimuladoResult>(() => buildResult(session));
 
   useEffect(() => {
-    // Mark all answered questions as seen
     const ids = session.questionRefs.map(r => `${r.year}-${r.index}`);
     markSeen(ids);
     saveResult(result);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pct = result.totalQuestions > 0 ? (result.correct / result.totalQuestions) * 100 : 0;
   const elapsed = result.elapsedSeconds;
   const timeStr = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
 
-  const copyPrompt = () => {
-    const wrong = result.wrongAnswers;
-    const lines = wrong.map(w => `- ENEM ${w.year}, questão ${w.index}: marquei ${w.selected}, correto era ${w.correct}. "${w.title.slice(0, 80)}..."`);
-    const text = `Errei ${wrong.length} questões no simulado ENEM. Me ajude a revisar:\n\n${lines.join('\n')}`;
-    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => {});
+  const copyAllPrompt = () => {
+    const parts = result.wrongAnswers.map(w => makePrompt(w)).join('\n\n---\n\n');
+    const text = `Errei ${result.wrongAnswers.length} questões no simulado ENEM. Me ajude a revisar cada uma:\n\n${parts}`;
+    copyText(text, () => { setCopiedAll(true); setTimeout(() => setCopiedAll(false), 2000); });
   };
 
+  // Group wrong answers by discipline
+  const byDiscipline: Record<string, WrongItem[]> = {};
+  for (const w of result.wrongAnswers) {
+    if (!byDiscipline[w.discipline]) byDiscipline[w.discipline] = [];
+    byDiscipline[w.discipline].push(w);
+  }
+  const disciplinesWithErrors = ALL_DISCIPLINES.filter(d => byDiscipline[d]?.length > 0);
+
+  const scoreColor = pct >= 70 ? C.secondary : pct >= 50 ? '#e65100' : C.error;
+
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--sys-bg)' }}>
-      <AppleNav
+    <div style={{ minHeight: '100dvh', background: C.surface }}>
+      <TopNav
         title="Resultado"
-        right={<button onClick={onHistory} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontSize: 17, cursor: 'pointer' }}>Histórico</button>}
+        right={<button onClick={onHistory} style={{ background: 'none', border: 'none', color: C.primary, fontSize: 16, cursor: 'pointer', fontWeight: 500 }}>Histórico</button>}
       />
 
-      <div style={{ padding: '24px 16px 40px', maxWidth: 600, margin: '0 auto' }}>
+      <div style={{ padding: '24px 16px 48px', maxWidth: 640, margin: '0 auto' }}>
 
         {/* Score hero */}
-        <div style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 24, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 20, border: '0.5px solid var(--separator)' }}>
+        <div style={{ background: C.surfaceLowest, borderRadius: 12, padding: 24, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 24, border: `1px solid ${C.outlineVariant}` }}>
           <ScoreRing pct={pct} size={90} />
           <div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--label)' }}>{result.correct} / {result.totalQuestions}</div>
-            <div style={{ fontSize: 15, color: 'var(--secondary-label)', marginTop: 2 }}>acertos · {timeStr}</div>
-            <div style={{ fontSize: 13, color: 'var(--tertiary-label)', marginTop: 4 }}>
-              {new Date(result.startedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+            <div style={{ fontSize: 28, fontWeight: 700, color: scoreColor, letterSpacing: '-0.02em' }}>{result.correct} / {result.totalQuestions}</div>
+            <div style={{ fontSize: 15, color: C.onSurfaceVariant, marginTop: 4 }}>acertos · {timeStr}</div>
+            <div style={{ fontSize: 13, color: C.outline, marginTop: 4 }}>
+              {new Date(result.startedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
             </div>
           </div>
         </div>
 
         {/* Per discipline */}
-        <div style={{ background: 'var(--card-bg)', borderRadius: 16, overflow: 'hidden', marginBottom: 24, border: '0.5px solid var(--separator)' }}>
-          <div style={{ padding: '14px 16px', borderBottom: '0.5px solid var(--separator)', fontSize: 15, fontWeight: 600, color: 'var(--label)' }}>Por disciplina</div>
+        <div style={{ background: C.surfaceLowest, borderRadius: 12, overflow: 'hidden', marginBottom: 24, border: `1px solid ${C.outlineVariant}` }}>
+          <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.outlineVariant}`, fontSize: 14, fontWeight: 600, color: C.onSurface }}>Por disciplina</div>
           {result.disciplineScores.map((ds, i) => {
             const dp = ds.total > 0 ? (ds.correct / ds.total) * 100 : 0;
             return (
-              <div key={ds.discipline} style={{ padding: '12px 16px', borderBottom: i < result.disciplineScores.length - 1 ? '0.5px solid var(--separator)' : 'none' }}>
+              <div key={ds.discipline} style={{ padding: '12px 16px', borderBottom: i < result.disciplineScores.length - 1 ? `1px solid ${C.outlineVariant}` : 'none' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span style={{ fontSize: 15, color: DISCIPLINE_COLORS[ds.discipline], fontWeight: 600 }}>{DISCIPLINE_LABELS[ds.discipline]}</span>
-                  <span style={{ fontSize: 15, color: 'var(--secondary-label)' }}>{ds.correct}/{ds.total}</span>
+                  <span style={{ fontSize: 14, color: DISCIPLINE_COLORS[ds.discipline], fontWeight: 600 }}>{DISCIPLINE_LABELS[ds.discipline]}</span>
+                  <span style={{ fontSize: 14, color: C.onSurfaceVariant }}>{ds.correct}/{ds.total}</span>
                 </div>
-                <div style={{ height: 6, background: 'var(--sys-bg)', borderRadius: 3 }}>
+                <div style={{ height: 6, background: C.surfaceContainer, borderRadius: 3 }}>
                   <div style={{ height: '100%', width: `${dp}%`, background: DISCIPLINE_COLORS[ds.discipline], borderRadius: 3, transition: 'width 0.6s' }} />
                 </div>
               </div>
@@ -74,52 +285,79 @@ export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
           })}
         </div>
 
-        {/* Wrong answers */}
+        {/* Wrong answers grouped by discipline */}
         {result.wrongAnswers.length > 0 && (
-          <div style={{ background: 'var(--card-bg)', borderRadius: 16, overflow: 'hidden', marginBottom: 24, border: '0.5px solid var(--separator)' }}>
-            <div style={{ padding: '14px 16px', borderBottom: '0.5px solid var(--separator)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--label)' }}>Questões erradas ({result.wrongAnswers.length})</span>
-              <button onClick={copyPrompt} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontSize: 14, cursor: 'pointer' }}>
-                {copied ? '✓ Copiado' : 'Copiar prompt IA'}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ fontSize: 16, fontWeight: 600, color: C.onSurface }}>Questões erradas ({result.wrongAnswers.length})</span>
+              <button onClick={copyAllPrompt} style={{
+                background: 'none', border: `1px solid ${C.outlineVariant}`, borderRadius: 6,
+                padding: '5px 12px', color: C.primary, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+              }}>
+                {copiedAll ? '✓ Copiado' : '📋 Copiar todos para IA'}
               </button>
             </div>
-            {result.wrongAnswers.map((w, i) => {
-              const key = w.questionId;
-              const open = expanded[key];
-              const q = session.loadedQuestions[key];
+
+            {disciplinesWithErrors.map(disc => {
+              const items = byDiscipline[disc];
+              const color = DISCIPLINE_COLORS[disc];
               return (
-                <div key={key} style={{ borderBottom: i < result.wrongAnswers.length - 1 ? '0.5px solid var(--separator)' : 'none' }}>
-                  <div onClick={() => setExpanded(e => ({ ...e, [key]: !open }))} style={{ padding: '12px 16px', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                    <div style={{ width: 4, flexShrink: 0, height: 20, borderRadius: 2, background: DISCIPLINE_COLORS[w.discipline], marginTop: 2 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, color: 'var(--secondary-label)', marginBottom: 2 }}>ENEM {w.year} · {DISCIPLINE_LABELS[w.discipline]}</div>
-                      <div style={{ fontSize: 15, color: 'var(--label)', lineHeight: 1.4 }}>{w.title.slice(0, 100)}{w.title.length > 100 ? '…' : ''}</div>
-                      <div style={{ fontSize: 13, marginTop: 4 }}>
-                        <span style={{ color: 'var(--red)' }}>Marquei: {w.selected}</span>
-                        <span style={{ color: 'var(--secondary-label)' }}> · </span>
-                        <span style={{ color: 'var(--green)' }}>Correto: {w.correct}</span>
-                      </div>
-                    </div>
-                    <span style={{ color: 'var(--secondary-label)', fontSize: 17 }}>{open ? '▲' : '▼'}</span>
+                <div key={disc} style={{ background: C.surfaceLowest, borderRadius: 10, overflow: 'hidden', marginBottom: 12, border: `1px solid ${C.outlineVariant}` }}>
+                  {/* Discipline header */}
+                  <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.outlineVariant}`, display: 'flex', alignItems: 'center', gap: 8, background: C.surfaceContainerLow }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color }}>{DISCIPLINE_LABELS[disc]}</span>
+                    <span style={{ fontSize: 12, color: C.outline }}>({items.length} erro{items.length !== 1 ? 's' : ''})</span>
                   </div>
-                  {open && q && (
-                    <div style={{ padding: '0 16px 12px 32px', fontSize: 14, color: 'var(--secondary-label)', lineHeight: 1.5 }}>
-                      {q.context && <div style={{ marginBottom: 8, fontStyle: 'italic' }}>{q.context.slice(0, 200)}…</div>}
-                      {q.alternatives.map(a => (
-                        <div key={a.letter} style={{ padding: '4px 0', color: a.isCorrect ? 'var(--green)' : w.selected === a.letter ? 'var(--red)' : 'var(--secondary-label)', fontWeight: a.isCorrect ? 600 : 400 }}>
-                          {a.letter}) {a.text?.slice(0, 80)}
+                  {items.map((w, itemIdx) => {
+                    const globalIdx = result.wrongAnswers.indexOf(w);
+                    return (
+                      <div
+                        key={w.questionId}
+                        onClick={() => setModalState({ open: true, idx: globalIdx })}
+                        style={{
+                          padding: '12px 16px', cursor: 'pointer',
+                          borderBottom: itemIdx < items.length - 1 ? `1px solid ${C.outlineVariant}` : 'none',
+                          display: 'flex', alignItems: 'center', gap: 12,
+                          transition: 'background 0.12s',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = C.surfaceContainerLow)}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, color: C.outline, marginBottom: 2 }}>ENEM {w.year} · Questão {w.index}</div>
+                          <div style={{ fontSize: 14, color: C.onSurface, lineHeight: 1.4 }}>{w.title.slice(0, 100)}{w.title.length > 100 ? '…' : ''}</div>
+                          <div style={{ fontSize: 12, marginTop: 4, display: 'flex', gap: 10 }}>
+                            <span style={{ color: C.error }}>Marquei: <strong>{w.selected}</strong></span>
+                            <span style={{ color: C.secondary }}>Correto: <strong>{w.correct}</strong></span>
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <span style={{ color: C.outline, fontSize: 20 }}>›</span>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
           </div>
         )}
 
-        <AppleBtn label="Novo Simulado" onClick={onNewSimulado} />
+        <button onClick={onNewSimulado} style={{
+          width: '100%', padding: '14px 0', borderRadius: 8, border: 'none',
+          background: C.primaryContainer, color: C.onPrimary,
+          fontSize: 16, fontWeight: 600, cursor: 'pointer',
+        }}>Novo Simulado</button>
       </div>
+
+      {/* Overlay modal */}
+      {modalState.open && (
+        <WrongAnswerModal
+          wrongs={result.wrongAnswers}
+          startIdx={modalState.idx}
+          session={session}
+          onClose={() => setModalState(s => ({ ...s, open: false }))}
+        />
+      )}
     </div>
   );
 }
@@ -139,7 +377,7 @@ function buildResult(session: SimuladoSession): SimuladoResult {
   for (const ref of questionRefs) {
     const id = `${ref.year}-${ref.index}`;
     const q = loadedQuestions[id];
-    const sel = answers[id];
+    const sel = answers[id] as Letter | undefined;
     if (!q) continue;
     disciplineMap[ref.discipline].total++;
     if (sel === q.correctAlternative) {
@@ -150,9 +388,7 @@ function buildResult(session: SimuladoSession): SimuladoResult {
     }
   }
 
-  const disciplineScores = config.disciplines
-    .map(d => disciplineMap[d])
-    .filter(ds => ds.total > 0);
+  const disciplineScores = config.disciplines.map(d => disciplineMap[d]).filter(ds => ds.total > 0);
 
   return {
     id: session.id,

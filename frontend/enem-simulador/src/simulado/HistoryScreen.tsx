@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AppleNav, NavBtn, ScoreRing } from './ui';
+import { TopNav, NavTextBtn, ScoreRing } from './ui';
 import { getResults, deleteResult, clearResults, clearSeen } from './storage';
 import type { SimuladoResult } from './types';
 import { DISCIPLINE_LABELS, DISCIPLINE_COLORS } from './types';
@@ -33,7 +33,7 @@ export function HistoryScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--sys-bg)' }}>
-      <AppleNav title="Histórico" left={<NavBtn label="← Voltar" onClick={onBack} />} />
+      <TopNav title="Histórico" left={<NavTextBtn label="← Voltar" onClick={onBack} />} />
 
       <div style={{ padding: '20px 16px 40px', maxWidth: 600, margin: '0 auto' }}>
 
