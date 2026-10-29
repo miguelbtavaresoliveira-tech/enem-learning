@@ -1,4 +1,6 @@
 import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import type { Question, Letter } from './types';
 
 // MD3 tokens (subset used here)
@@ -25,11 +27,17 @@ const C = {
 
 // Shared markdown renderer — images clickable, tables scrollable
 const mdComponents: Components = {
-  img: ({ src, alt }) => (
-    <a href={src} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginBlock: 8 }}>
-      <img src={src} alt={alt ?? ''} style={{ maxWidth: '100%', borderRadius: 6, display: 'block' }} />
-    </a>
-  ),
+  img: (props) => {
+    const src = typeof props.src === 'string' ? props.src : undefined;
+    if (!src) return null;
+    return (
+      <a href={src} target="_blank" rel="noopener noreferrer" title="Clique para abrir em tamanho original"
+        style={{ display: 'block', marginBlock: 8 }}>
+        <img src={src} alt={props.alt ?? 'Imagem da questão'} loading="lazy"
+          style={{ maxWidth: '100%', borderRadius: 6, display: 'block' }} />
+      </a>
+    );
+  },
   table: ({ children }) => (
     <div style={{ overflowX: 'auto', marginBlock: 8 }}>
       <table style={{ borderCollapse: 'collapse', fontSize: 14 }}>{children}</table>
@@ -75,7 +83,7 @@ export function QuestionContent({ question, selected, revealed = false, onAnswer
           fontSize: 16, lineHeight: 1.75, color: C.onSurface,
           border: `1px solid ${C.outlineVariant}`,
         }}>
-          <ReactMarkdown components={mdComponents}>{question.context}</ReactMarkdown>
+          <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{question.context}</ReactMarkdown>
         </div>
       )}
 
@@ -89,7 +97,7 @@ export function QuestionContent({ question, selected, revealed = false, onAnswer
       {/* Command (alternativesIntroduction) with markdown */}
       {question.alternativesIntroduction && (
         <div style={{ fontSize: 15, color: C.onSurface, marginBottom: 12, fontWeight: 500, lineHeight: 1.65 }}>
-          <ReactMarkdown components={mdComponents}>{question.alternativesIntroduction}</ReactMarkdown>
+          <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{question.alternativesIntroduction}</ReactMarkdown>
         </div>
       )}
 
@@ -138,7 +146,7 @@ export function QuestionContent({ question, selected, revealed = false, onAnswer
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>{alt.letter}</span>
               <div style={{ fontSize: 15, lineHeight: 1.6, paddingTop: 3 }}>
-                {alt.text && <ReactMarkdown components={mdComponents}>{alt.text}</ReactMarkdown>}
+                {alt.text && <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{alt.text}</ReactMarkdown>}
                 {alt.file && (
                   <a href={alt.file} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 6 }}>
                     <img src={alt.file} alt={`Alternativa ${alt.letter}`} style={{ maxWidth: '100%', borderRadius: 6 }} />
