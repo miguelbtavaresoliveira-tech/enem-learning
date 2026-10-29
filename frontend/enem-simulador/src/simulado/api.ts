@@ -1,31 +1,133 @@
 import type { Discipline, QuestionRef, Question, DifficultyLevel, SimuladoConfig } from './types';
 
-const BASE = import.meta.env.VITE_ENEM_API_URL ?? '/v1';
+const PRIMARY = import.meta.env.VITE_ENEM_API_URL ?? 'https://api.enem.dev/v1';
+const FALLBACK = import.meta.env.VITE_ENEM_API_FALLBACK ?? '/v1';
 
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+// Sliding-window rate limiter: max 9 requests per 10 s
+const WINDOW_MS = 10_000;
+const MAX_REQ = 9;
+const reqTimestamps: number[] = [];
 
-async function apiFetch<T>(path: string, attempt = 0): Promise<T> {
-  let res: Response;
+async function waitForSlot(): Promise<void> {
+  for (;;) {
+    const now = Date.now();
+    // Remove timestamps older than the window
+    while (reqTimestamps.length > 0 && now - reqTimestamps[0] >= WINDOW_MS) {
+      reqTimestamps.shift();
+    }
+    if (reqTimestamps.length < MAX_REQ) {
+      reqTimestamps.push(now);
+      return;
+    }
+    // Wait until the oldest slot expires
+    const wait = WINDOW_MS - (now - reqTimestamps[0]) + 50;
+    await new Promise(r => setTimeout(r, wait));
+  }
+}
+
+async function rawFetch(base: string, path: string): Promise<Response> {
+  return fetch(`${base}${path}`);
+}
+
+async function apiFetch<T>(path: string): Promise<T> {
+  await waitForSlot();
+
+  let primaryRes: Response | null = null;
   try {
-    res = await fetch(`${BASE}${path}`);
+    primaryRes = await rawFetch(PRIMARY, path);
+  } catch {
+    // Network error — try fallback immediately
+  }
+
+  if (primaryRes) {
+    if (primaryRes.status === 404) throw new Error(`Não encontrado: ${path}`);
+    if (primaryRes.status === 429) {
+      // Retry up to 3 times with back-off
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+        await waitForSlot();
+        try {
+          primaryRes = await rawFetch(PRIMARY, path);
+          if (primaryRes.ok) return primaryRes.json() as Promise<T>;
+          if (primaryRes.status !== 429) break;
+        } catch { /* try fallback below */ }
+      }
+    }
+    if (primaryRes.ok) return primaryRes.json() as Promise<T>;
+    // 5xx or persistent 429 → try fallback
+  }
+
+  // Fallback
+  await waitForSlot();
+  let fbRes: Response;
+  try {
+    fbRes = await rawFetch(FALLBACK, path);
   } catch {
     throw new Error('Sem conexão com a API. Verifique sua internet.');
   }
-  if (res.status === 429 && attempt < 4) {
-    await sleep(1200 * (attempt + 1));
-    return apiFetch<T>(path, attempt + 1);
-  }
-  if (!res.ok) throw new Error(`API retornou ${res.status}`);
-  return res.json() as Promise<T>;
+  if (!fbRes.ok) throw new Error(`API retornou ${fbRes.status}`);
+  return fbRes.json() as Promise<T>;
 }
 
-interface ExamDetail {
+// ---- Types ----
+
+interface ExamMeta {
   year: number;
   questions: Array<{ index: number; discipline: string; language: string | null }>;
-  languages: Array<{ value: string }>;
+  languages: string[];
 }
 
-function shuffle<T>(arr: T[]): T[] {
+interface RawQuestion {
+  title: string; year: number; index: number; discipline: string;
+  language: string | null; context: string | null; files: string[];
+  correctAlternative: Letter; alternativesIntroduction: string | null;
+  alternatives: Array<{ letter: Letter; text: string | null; file: string | null; isCorrect: boolean }>;
+}
+type Letter = 'A' | 'B' | 'C' | 'D' | 'E';
+
+interface PageResponse {
+  questions: RawQuestion[];
+  metadata: { limit: number; offset: number; total: number; hasMore: boolean };
+}
+
+// ---- Cache ----
+
+const metaCache = new Map<number, ExamMeta>();
+const pageCache = new Map<string, RawQuestion[]>();
+
+function metaCacheKey(year: number) { return `enem_meta_${year}`; }
+
+function loadMetaFromStorage(year: number): ExamMeta | null {
+  try {
+    const raw = localStorage.getItem(metaCacheKey(year));
+    if (!raw) return null;
+    return JSON.parse(raw) as ExamMeta;
+  } catch { return null; }
+}
+
+function saveMetaToStorage(meta: ExamMeta) {
+  try { localStorage.setItem(metaCacheKey(meta.year), JSON.stringify(meta)); } catch { /* ignore */ }
+}
+
+async function getExamMeta(year: number): Promise<ExamMeta> {
+  if (metaCache.has(year)) return metaCache.get(year)!;
+  const cached = loadMetaFromStorage(year);
+  if (cached) { metaCache.set(year, cached); return cached; }
+
+  const raw = await apiFetch<{ year: number; questions: ExamMeta['questions']; languages: Array<{ value: string }> }>(`/exams/${year}`);
+  const meta: ExamMeta = {
+    year: raw.year,
+    questions: raw.questions,
+    languages: raw.languages.map(l => l.value),
+  };
+  metaCache.set(year, meta);
+  saveMetaToStorage(meta);
+  return meta;
+}
+
+// ---- Helpers ----
+
+export function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -34,7 +136,7 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-function difficultySlice(items: QuestionRef[], level: DifficultyLevel): QuestionRef[] {
+export function difficultySlice(items: QuestionRef[], level: DifficultyLevel): QuestionRef[] {
   if (level === 'all') return items;
   const t = Math.floor(items.length / 3);
   if (level === 'easy') return items.slice(0, t);
@@ -42,102 +144,24 @@ function difficultySlice(items: QuestionRef[], level: DifficultyLevel): Question
   return items.slice(t * 2);
 }
 
-export async function buildQuestionRefs(
-  years: number[],
-  disciplines: Discipline[],
-  questionCount: number,
-  difficulty: DifficultyLevel,
-  onlyNew: boolean,
-  seenIds: Set<string>,
-  onProgress?: (done: number, total: number) => void,
-): Promise<QuestionRef[]> {
-  const byDiscipline: Record<string, QuestionRef[]> = {};
-  for (const d of disciplines) byDiscipline[d] = [];
-
-  // Fetch exam metadata for each year (parallel, max 4 concurrent)
-  const CHUNK = 4;
-  for (let i = 0; i < years.length; i += CHUNK) {
-    const chunk = years.slice(i, i + CHUNK);
-    const results = await Promise.allSettled(
-      chunk.map(y => apiFetch<ExamDetail>(`/exams/${y}`))
-    );
-    results.forEach((r, idx) => {
-      if (r.status !== 'fulfilled') return;
-      const exam = r.value;
-      const year = chunk[idx];
-      // Pick default language for foreign language questions
-      const defaultLang = exam.languages.length > 0 ? exam.languages[0].value : null;
-
-      for (const disc of disciplines) {
-        const qs = exam.questions
-          .filter(q => q.discipline === disc)
-          .filter(q => !q.language || q.language === defaultLang)
-          .map(q => ({ year, index: q.index, discipline: disc as Discipline, language: q.language }));
-        byDiscipline[disc].push(...qs);
-      }
-    });
-    onProgress?.(Math.min(i + CHUNK, years.length), years.length);
-    if (i + CHUNK < years.length) await sleep(200);
-  }
-
-  const perDisc = Math.floor(questionCount / disciplines.length);
-  const remainder = questionCount % disciplines.length;
-  const selected: QuestionRef[] = [];
-
-  disciplines.forEach((d, i) => {
-    const count = perDisc + (i < remainder ? 1 : 0);
-    let pool = difficultySlice(byDiscipline[d], difficulty);
-    if (onlyNew) pool = pool.filter(q => !seenIds.has(`${q.year}-${q.index}`));
-    selected.push(...shuffle(pool).slice(0, count));
-  });
-
-  return shuffle(selected);
+function isComplete(q: RawQuestion): boolean {
+  if (!q.alternatives || q.alternatives.length < 5) return false;
+  if (!q.correctAlternative) return false;
+  const hasCorrect = q.alternatives.some(a => a.letter === q.correctAlternative);
+  if (!hasCorrect) return false;
+  const altOk = q.alternatives.every(a => a.text || a.file);
+  if (!altOk) return false;
+  const hasBody = !!(q.context || q.alternativesIntroduction || (q.files && q.files.length > 0));
+  return hasBody;
 }
 
-export async function fetchSimuladoQuestions(
-  config: Pick<SimuladoConfig, 'years' | 'disciplines' | 'questionCount' | 'onlyNew' | 'difficulty'>,
-  seenIds: Set<string>,
-): Promise<Question[]> {
-  const res = await fetch('/api/simulado/questions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      years: config.years,
-      disciplines: config.disciplines,
-      questionCount: config.questionCount,
-      onlyNew: config.onlyNew,
-      seenIds: Array.from(seenIds),
-      difficulty: config.difficulty,
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `Erro ${res.status} ao gerar simulado`);
-  }
-  const data = await res.json() as { questions: Question[] };
-  return data.questions;
-}
-
-export async function fetchQuestion(ref: QuestionRef): Promise<Question> {
-  interface RawQuestion {
-    title: string; year: number; index: number; discipline: string;
-    language: string | null; context: string | null; files: string[];
-    correctAlternative: Letter; alternativesIntroduction: string | null;
-    alternatives: Array<{ letter: Letter; text: string | null; file: string | null; isCorrect: boolean }>;
-  }
-  type Letter = 'A'|'B'|'C'|'D'|'E';
-
-  const path = ref.language
-    ? `/exams/${ref.year}/questions/${ref.index}-${ref.language}`
-    : `/exams/${ref.year}/questions/${ref.index}`;
-
-  const raw = await apiFetch<RawQuestion>(path);
+function rawToQuestion(raw: RawQuestion, discipline: Discipline): Question {
   return {
-    id: `${ref.year}-${ref.index}`,
-    year: ref.year,
-    index: ref.index,
-    discipline: ref.discipline,
-    language: ref.language,
+    id: `${raw.year}-${raw.index}`,
+    year: raw.year,
+    index: raw.index,
+    discipline,
+    language: raw.language,
     title: raw.title,
     context: raw.context,
     files: raw.files ?? [],
@@ -145,4 +169,97 @@ export async function fetchQuestion(ref: QuestionRef): Promise<Question> {
     alternativesIntroduction: raw.alternativesIntroduction,
     alternatives: raw.alternatives,
   };
+}
+
+async function fetchPage(year: number, offset: number, lang: string | null): Promise<RawQuestion[]> {
+  const langParam = lang ? `&language=${lang}` : '';
+  const key = `${year}:${offset}:${lang ?? ''}`;
+  if (pageCache.has(key)) return pageCache.get(key)!;
+
+  const data = await apiFetch<PageResponse>(`/exams/${year}/questions?limit=50&offset=${offset}${langParam}`);
+  const qs = data.questions ?? [];
+  pageCache.set(key, qs);
+  return qs;
+}
+
+// ---- Main export ----
+
+export async function loadSimuladoQuestions(
+  config: Pick<SimuladoConfig, 'years' | 'disciplines' | 'questionCount' | 'onlyNew' | 'difficulty'>,
+  seenIds: Set<string>,
+  onProgress?: (done: number, total: number) => void,
+): Promise<Question[]> {
+  const { years, disciplines, questionCount, onlyNew, difficulty } = config;
+
+  // Step 1: fetch metadata for each year
+  const byDisc: Record<string, QuestionRef[]> = {};
+  for (const d of disciplines) byDisc[d] = [];
+
+  let metaDone = 0;
+  const metaTotal = years.length;
+
+  for (const year of years) {
+    try {
+      const meta = await getExamMeta(year);
+      // Pick language: prefer 'ingles', else first
+      const lang = meta.languages.includes('ingles')
+        ? 'ingles'
+        : meta.languages[0] ?? null;
+
+      for (const disc of disciplines) {
+        const qs = meta.questions
+          .filter(q => q.discipline === disc)
+          .filter(q => !q.language || q.language === lang)
+          .map(q => ({ year, index: q.index, discipline: disc as Discipline, language: q.language }));
+        byDisc[disc].push(...qs);
+      }
+    } catch { /* skip year on error */ }
+    metaDone++;
+    onProgress?.(metaDone, metaTotal + questionCount);
+  }
+
+  // Step 2: sample refs per discipline
+  const perDisc = Math.floor(questionCount / disciplines.length);
+  const remainder = questionCount % disciplines.length;
+  const poolByDisc: Record<string, QuestionRef[]> = {};
+
+  disciplines.forEach((d) => {
+    let pool = difficultySlice(byDisc[d], difficulty);
+    if (onlyNew) pool = pool.filter(q => !seenIds.has(`${q.year}-${q.index}`));
+    poolByDisc[d] = shuffle(pool);
+  });
+
+  // Step 3: fetch pages and validate, replacing incomplete questions
+  const selected: Question[] = [];
+  let fetchDone = 0;
+
+  for (const disc of disciplines) {
+    const count = perDisc + (disciplines.indexOf(disc) < remainder ? 1 : 0);
+    const pool = poolByDisc[disc];
+    const needed = count;
+    let filled = 0;
+    let poolIdx = 0;
+
+    while (filled < needed && poolIdx < pool.length) {
+      const ref = pool[poolIdx++];
+      // Determine page offset (pages overlap by 1: floor((index-1)/50)*50)
+      const offset = Math.floor((ref.index - 1) / 50) * 50;
+      const lang = ref.language;
+
+      let rawQ: RawQuestion | null = null;
+      try {
+        const page = await fetchPage(ref.year, offset, lang);
+        rawQ = page.find(q => q.index === ref.index) ?? null;
+      } catch { /* skip */ }
+
+      fetchDone++;
+      onProgress?.(metaDone + fetchDone, metaTotal + questionCount);
+
+      if (!rawQ || !isComplete(rawQ)) continue;
+      selected.push(rawToQuestion(rawQ, disc as Discipline));
+      filled++;
+    }
+  }
+
+  return shuffle(selected);
 }

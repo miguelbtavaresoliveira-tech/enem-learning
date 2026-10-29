@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SimuladoConfig, SimuladoSession, QuestionRef, Question, Letter } from './types';
+import type { SimuladoConfig, SimuladoSession, Question, Letter } from './types';
 import { DISCIPLINE_COLORS, DISCIPLINE_LABELS } from './types';
 import { NavTextBtn, ProgressBar } from './ui';
-import { fetchSimuladoQuestions } from './api';
+import { loadSimuladoQuestions } from './api';
+import { QuestionContent } from './QuestionContent';
 import { saveSession, getSeenIds } from './storage';
 
 // MD3 tokens
@@ -36,6 +37,7 @@ interface Props {
   onFinish: (session: SimuladoSession) => void;
   onBack: () => void;
 }
+
 
 /* ---- Answer card ---- */
 function AnswerCard({
@@ -121,6 +123,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [retryKey, setRetryKey] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
+  const [loadProgress, setLoadProgress] = useState({ done: 0, total: 0 });
   const [session, setSession] = useState<SimuladoSession | null>(null);
   const [current, setCurrent] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -129,6 +132,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   const timerRef = useRef<number | null>(null);
   const sessionRef = useRef<SimuladoSession | null>(null);
   const finishedRef = useRef(false);
+  const initGuard = useRef(false);
 
   // Timer starts only when exam is ready (T-12)
   useEffect(() => {
@@ -138,11 +142,21 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   }, [phase]);
 
   useEffect(() => {
+    // Guard against StrictMode double-invoke
+    if (initGuard.current) return;
+    initGuard.current = true;
+
+    let cancelled = false;
+
     async function init() {
       setPhase('loading');
+      setLoadProgress({ done: 0, total: 0 });
       try {
         const seenIds = config.onlyNew ? getSeenIds() : new Set<string>();
-        const questions = await fetchSimuladoQuestions(config, seenIds);
+        const questions = await loadSimuladoQuestions(config, seenIds, (done, total) => {
+          if (!cancelled) setLoadProgress({ done, total });
+        });
+        if (cancelled) return;
         if (questions.length === 0) throw new Error('Nenhuma questão encontrada com esses filtros.');
 
         const loadedQuestions: Record<string, Question> = {};
@@ -165,11 +179,14 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
         setSession(sess);
         setPhase('exam');
       } catch (e) {
-        setErrorMsg(e instanceof Error ? e.message : 'Erro ao carregar questões.');
-        setPhase('error');
+        if (!cancelled) {
+          setErrorMsg(e instanceof Error ? e.message : 'Erro ao carregar questões.');
+          setPhase('error');
+        }
       }
     }
     init();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryKey]);
 
@@ -201,8 +218,10 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') navigate(current + 1);
       if (e.key === 'ArrowLeft') navigate(current - 1);
-      // T-11: block letter keys after answer is revealed
+      // Block letter keys after gabarito is revealed
       if (revealed[currentId]) return;
+      // Also block when answer already set in immediate mode and revealed
+      if (config.revealMode === 'immediate' && session?.answers[currentId] && revealed[currentId]) return;
       const letters: Letter[] = ['A', 'B', 'C', 'D', 'E'];
       const idx = letters.indexOf(e.key.toUpperCase() as Letter);
       if (idx >= 0 && currentQ && currentQ.alternatives[idx]) answer(letters[idx]);
@@ -228,11 +247,15 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   });
 
   if (phase === 'loading') {
+    const pct = loadProgress.total > 0 ? Math.round((loadProgress.done / loadProgress.total) * 100) : 0;
+    const label = loadProgress.total > 0
+      ? `Baixando questões… ${loadProgress.done}/${loadProgress.total}`
+      : 'Preparando questões…';
     return (
       <div style={{ minHeight: '100dvh', background: C.surface, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24 }}>
-        <div style={{ fontSize: 17, color: C.onSurface, fontWeight: 500 }}>Preparando questões…</div>
+        <div style={{ fontSize: 17, color: C.onSurface, fontWeight: 500 }}>{label}</div>
         <div style={{ width: '100%', maxWidth: 320 }}>
-          <ProgressBar value={50} color={C.primaryContainer} />
+          <ProgressBar value={pct} color={C.primaryContainer} />
         </div>
       </div>
     );
@@ -244,7 +267,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
         <div style={{ fontSize: 17, color: C.error, textAlign: 'center' }}>{errorMsg}</div>
         <div style={{ display: 'flex', gap: 12 }}>
           <button onClick={onBack} style={{ color: C.onSurfaceVariant, background: 'none', border: `1px solid ${C.outlineVariant}`, borderRadius: 8, padding: '10px 20px', fontSize: 15, cursor: 'pointer' }}>Voltar</button>
-          <button onClick={() => { finishedRef.current = false; setErrorMsg(''); setRetryKey(k => k + 1); }}
+          <button onClick={() => { finishedRef.current = false; initGuard.current = false; setErrorMsg(''); setRetryKey(k => k + 1); }}
             style={{ color: C.onPrimary, background: C.primaryContainer, border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
             Tentar novamente
           </button>
@@ -307,10 +330,8 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
               </div>
             )}
 
-            {!currentQ ? (
-              <div style={{ textAlign: 'center', padding: 40, color: C.onSurfaceVariant }}>Carregando questão…</div>
-            ) : (
-              <QuestionCard
+            {currentQ && (
+              <QuestionContent
                 question={currentQ}
                 selected={session.answers[currentId]}
                 revealed={config.revealMode === 'immediate' ? revealed[currentId] : false}
@@ -396,76 +417,3 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   );
 }
 
-function QuestionCard({ question, selected, revealed, onAnswer }: {
-  question: Question; selected: Letter | undefined; revealed: boolean; onAnswer: (l: Letter) => void;
-}) {
-  return (
-    <div>
-      {question.context && (
-        <div style={{
-          background: C.surfaceContainerLow, borderRadius: 8,
-          padding: '16px 20px', marginBottom: 16,
-          fontSize: 16, lineHeight: 1.75, color: C.onSurface,
-          border: `1px solid ${C.outlineVariant}`,
-        }}>
-          {question.context}
-        </div>
-      )}
-      {/* T-05: files shown only when URL not already in context markdown */}
-      {question.files?.filter(url => !question.context?.includes(url)).map((url, i) => (
-        <img key={i} src={url} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: 8 }} />
-      ))}
-      {/* T-05: show title only as small metadata, not as enunciado */}
-      <div style={{ fontSize: 12, color: C.outline, marginBottom: 8 }}>
-        ENEM {question.year} · Q{question.index}
-      </div>
-      {question.alternativesIntroduction && (
-        <div style={{ fontSize: 14, color: C.onSurfaceVariant, marginBottom: 10 }}>{question.alternativesIntroduction}</div>
-      )}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {question.alternatives.map(alt => {
-          const isSelected = selected === alt.letter;
-          const isCorrect = alt.isCorrect;
-          let bg = C.surfaceLowest;
-          let border = `1px solid ${C.outlineVariant}`;
-          let color = C.onSurface;
-          let badgeBg = C.surfaceContainerHigh;
-          let badgeColor = C.onSurfaceVariant;
-
-          if (revealed) {
-            if (isCorrect) {
-              bg = 'rgba(146,245,164,0.2)'; border = `2px solid ${C.secondary}`; color = '#004d22';
-              badgeBg = C.secondary; badgeColor = C.onSecondary;
-            } else if (isSelected) {
-              bg = 'rgba(255,218,214,0.4)'; border = `2px solid ${C.error}`; color = C.error;
-              badgeBg = C.error; badgeColor = C.onError;
-            }
-          } else if (isSelected) {
-            bg = 'rgba(220,225,255,0.4)'; border = `2px solid ${C.primaryContainer}`; color = C.primary;
-            badgeBg = C.primaryContainer; badgeColor = C.onPrimary;
-          }
-
-          return (
-            <button key={alt.letter} onClick={() => !revealed && onAnswer(alt.letter)} style={{
-              display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 16px',
-              background: bg, border, borderRadius: 8,
-              cursor: revealed ? 'default' : 'pointer',
-              textAlign: 'left', color, transition: 'all 0.12s', width: '100%',
-            }}>
-              <span style={{
-                flexShrink: 0, width: 26, height: 26, borderRadius: 4,
-                background: badgeBg, color: badgeColor,
-                fontSize: 13, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>{alt.letter}</span>
-              <div style={{ fontSize: 15, lineHeight: 1.6, paddingTop: 3 }}>
-                {alt.text}
-                {alt.file && <img src={alt.file} alt="" style={{ maxWidth: '100%', borderRadius: 6, marginTop: 6 }} />}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
