@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { SimuladoSession, SimuladoResult, DisciplineScore, Discipline, Letter, Question } from './types';
+import { useEffect, useRef, useState } from 'react';
+import type { SimuladoSession, SimuladoResult, WrongAnswer, DisciplineScore, Discipline, Letter, Question } from './types';
 import { ALL_DISCIPLINES, DISCIPLINE_LABELS, DISCIPLINE_COLORS } from './types';
 import { TopNav, ScoreRing } from './ui';
 import { markSeen, saveResult } from './storage';
@@ -51,10 +51,50 @@ function copyText(text: string, onDone: () => void) {
   }
 }
 
-type WrongItem = SimuladoResult['wrongAnswers'][number];
+type WrongItem = WrongAnswer;
 
-function makePrompt(w: WrongItem): string {
-  return `Errei a questão ${w.index} do ENEM ${w.year} (${DISCIPLINE_LABELS[w.discipline]}). O enunciado é: "${w.title.slice(0, 300)}". A resposta correta é a alternativa ${w.correct}, mas marquei ${w.selected}. Me explique por que a alternativa ${w.correct} é a correta e o raciocínio por trás.`;
+/** Strips markdown image tags and trims to maxLen chars for prompt readability */
+function stripImages(text: string | null, maxLen = 600): string {
+  if (!text) return '';
+  return text.replace(/!\[.*?\]\(.*?\)/g, '[imagem]').slice(0, maxLen);
+}
+
+/** Builds a single-question block for the study-plan prompt */
+function makePrompt(w: WrongItem, n: number): string {
+  const disc = DISCIPLINE_LABELS[w.discipline];
+  const myAnswer = w.selected ?? '(em branco)';
+  const altsText = w.alternatives
+    .map(a => `${a.letter}) ${a.text ?? '[imagem]'}`)
+    .join('\n');
+  const imageNote = w.hasImage ? '\n(Esta questão contém figura — a imagem não está disponível neste texto.)' : '';
+
+  return `=== Questão ${n} — ENEM ${w.year}, Q${w.index} — ${disc} ===
+Texto-base: ${stripImages(w.context) || '(sem texto-base)'}
+Comando: ${stripImages(w.alternativesIntroduction) || w.title}${imageNote}
+Alternativas:
+${altsText}
+Minha resposta: ${myAnswer}
+Resposta correta: ${w.correct}`;
+}
+
+/** Builds the full study-plan prompt for all review items */
+function buildStudyPrompt(items: WrongItem[]): string {
+  if (!items.length) return '';
+
+  const header = `Sou estudante e fiz um simulado do ENEM. Errei ou deixei em branco as questões abaixo.
+
+Para CADA questão:
+1. Diga qual conteúdo/assunto do ENEM ela cobra.
+2. Explique por que a alternativa correta está certa e por que a minha está errada (ou por que eu deveria saber respondê-la).
+
+Depois, monte um PLANO DE ESTUDO:
+- Liste os conteúdos agrupados por área, do mais urgente ao menos urgente.
+- Distribua em um cronograma de 14 dias (1–2 h por dia), com o que estudar e que tipo de exercício fazer.
+- Termine com 3 dicas de estratégia de prova para essas áreas.
+
+`;
+
+  return header + items.map((w, i) => makePrompt(w, i + 1)).join('\n\n');
 }
 
 /* ---- Wrong answer overlay modal ---- */
@@ -78,7 +118,7 @@ function WrongAnswerModal({
 
   const handleCopy = () => {
     if (!w) return;
-    copyText(makePrompt(w), () => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    copyText(makePrompt(w, idx + 1), () => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
 
   useEffect(() => {
@@ -138,7 +178,7 @@ function WrongAnswerModal({
           {/* Answer verdict */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
             <div style={{ padding: '6px 14px', borderRadius: 6, background: C.errorContainer, border: `1px solid ${C.error}`, fontSize: 14, color: C.error }}>
-              Marquei: <strong>{w.selected}</strong>
+              Marquei: <strong>{w.selected ?? '(em branco)'}</strong>
             </div>
             <div style={{ padding: '6px 14px', borderRadius: 6, background: C.secondaryContainer, border: `1px solid ${C.secondary}`, fontSize: 14, color: C.secondary }}>
               Correto: <strong>{w.correct}</strong>
@@ -229,9 +269,10 @@ export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
   const elapsed = result.elapsedSeconds;
   const timeStr = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
 
+  const reviewItems = result.wrongAnswers;
+
   const copyAllPrompt = () => {
-    const parts = result.wrongAnswers.map(w => makePrompt(w)).join('\n\n---\n\n');
-    const text = `Errei ${result.wrongAnswers.length} questões no simulado ENEM. Me ajude a revisar cada uma:\n\n${parts}`;
+    const text = buildStudyPrompt(reviewItems);
     copyText(text, () => { setCopiedAll(true); setTimeout(() => setCopiedAll(false), 2000); });
   };
 
@@ -289,7 +330,7 @@ export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
         {result.wrongAnswers.length > 0 && (
           <div style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <span style={{ fontSize: 16, fontWeight: 600, color: C.onSurface }}>Questões erradas ({result.wrongAnswers.length})</span>
+              <span style={{ fontSize: 16, fontWeight: 600, color: C.onSurface }}>Questões a revisar ({result.wrongAnswers.length})</span>
               <button onClick={copyAllPrompt} style={{
                 background: 'none', border: `1px solid ${C.outlineVariant}`, borderRadius: 6,
                 padding: '5px 12px', color: C.primary, fontSize: 13, fontWeight: 500, cursor: 'pointer',
@@ -307,7 +348,7 @@ export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
                   <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.outlineVariant}`, display: 'flex', alignItems: 'center', gap: 8, background: C.surfaceContainerLow }}>
                     <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
                     <span style={{ fontSize: 13, fontWeight: 700, color }}>{DISCIPLINE_LABELS[disc]}</span>
-                    <span style={{ fontSize: 12, color: C.outline }}>({items.length} erro{items.length !== 1 ? 's' : ''})</span>
+                    <span style={{ fontSize: 12, color: C.outline }}>({items.length} para revisar)</span>
                   </div>
                   {items.map((w, itemIdx) => {
                     const globalIdx = result.wrongAnswers.indexOf(w);
@@ -328,7 +369,7 @@ export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
                           <div style={{ fontSize: 12, color: C.outline, marginBottom: 2 }}>ENEM {w.year} · Questão {w.index}</div>
                           <div style={{ fontSize: 14, color: C.onSurface, lineHeight: 1.4 }}>{w.title.slice(0, 100)}{w.title.length > 100 ? '…' : ''}</div>
                           <div style={{ fontSize: 12, marginTop: 4, display: 'flex', gap: 10 }}>
-                            <span style={{ color: C.error }}>Marquei: <strong>{w.selected}</strong></span>
+                            <span style={{ color: C.error }}>{w.selected ? <>Marquei: <strong>{w.selected}</strong></> : <em>Em branco</em>}</span>
                             <span style={{ color: C.secondary }}>Correto: <strong>{w.correct}</strong></span>
                           </div>
                         </div>
@@ -383,8 +424,20 @@ function buildResult(session: SimuladoSession): SimuladoResult {
     if (sel === q.correctAlternative) {
       correct++;
       disciplineMap[ref.discipline].correct++;
-    } else if (sel) {
-      wrongAnswers.push({ questionId: id, year: ref.year, index: ref.index, discipline: ref.discipline, selected: sel, correct: q.correctAlternative, title: q.title });
+    } else {
+      wrongAnswers.push({
+        questionId: id,
+        year: ref.year,
+        index: ref.index,
+        discipline: ref.discipline,
+        selected: sel ?? null,
+        correct: q.correctAlternative,
+        title: q.title,
+        context: q.context,
+        alternativesIntroduction: q.alternativesIntroduction,
+        alternatives: q.alternatives.map(a => ({ letter: a.letter, text: a.text })),
+        hasImage: q.files.length > 0 || q.alternatives.some(a => a.file),
+      });
     }
   }
 
