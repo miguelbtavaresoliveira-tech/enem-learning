@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SimuladoSession, SimuladoResult, WrongAnswer, DisciplineScore, Discipline, Letter, Question } from './types';
 import { ALL_DISCIPLINES, DISCIPLINE_LABELS, DISCIPLINE_COLORS } from './types';
 import { TopNav, ScoreRing } from './ui';
+import { QuestionContent } from './QuestionContent';
 import { markSeen, saveResult } from './storage';
 
 // MD3 tokens
@@ -190,40 +191,12 @@ function WrongAnswerModal({
               Questão não carregada durante o simulado.
             </div>
           ) : (
-            <>
-              {q.context && (
-                <div style={{ background: C.surfaceContainerLow, borderRadius: 8, padding: '14px 18px', marginBottom: 14, fontSize: 15, lineHeight: 1.7, color: C.onSurface, border: `1px solid ${C.outlineVariant}` }}>
-                  {q.context}
-                </div>
-              )}
-              {q.files?.map((url, fi) => (
-                <img key={fi} src={url} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: 8 }} />
-              ))}
-              <div style={{ fontSize: 16, lineHeight: 1.75, color: C.onSurface, marginBottom: 16 }}>{q.title}</div>
-              {q.alternativesIntroduction && (
-                <div style={{ fontSize: 13, color: C.onSurfaceVariant, marginBottom: 10 }}>{q.alternativesIntroduction}</div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {q.alternatives.map(alt => {
-                  const isCorrect = alt.isCorrect;
-                  const isSelected = w.selected === alt.letter;
-                  let bg: string = C.surface;
-                  let border: string = `1px solid ${C.outlineVariant}`;
-                  let color: string = C.onSurface;
-                  if (isCorrect) { bg = 'rgba(146,245,164,0.2)'; border = `2px solid ${C.secondary}`; color = '#004d22'; }
-                  else if (isSelected) { bg = 'rgba(255,218,214,0.4)'; border = `2px solid ${C.error}`; color = C.error; }
-                  return (
-                    <div key={alt.letter} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: bg, border, borderRadius: 8, color }}>
-                      <span style={{ fontWeight: 700, fontSize: 14, flexShrink: 0, width: 20 }}>{alt.letter}</span>
-                      <div style={{ fontSize: 14, lineHeight: 1.6 }}>
-                        {alt.text}
-                        {alt.file && <img src={alt.file} alt="" style={{ maxWidth: '100%', borderRadius: 6, marginTop: 4 }} />}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
+            <QuestionContent
+              question={q}
+              selected={w.selected ?? undefined}
+              revealed={true}
+              readOnly={true}
+            />
           )}
         </div>
 
