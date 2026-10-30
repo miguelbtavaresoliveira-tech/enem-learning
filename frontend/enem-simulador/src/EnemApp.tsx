@@ -13,7 +13,7 @@ import {
   RotateCcw,
   Eye,
 } from 'lucide-react';
-import { apiFetch, HttpError } from './simulado/api';
+import { apiFetch } from './simulado/api';
 
 /* -------------------------------------------------------------------------- */
 /*  Tipos (espelham o schema oficial da API: GET /v1/exams/{year}/questions)   */
@@ -68,7 +68,7 @@ async function fetchPage(year: number, offset: number): Promise<QuestionsRespons
   try {
     data = await apiFetch<QuestionsResponse>(`/exams/${year}/questions?limit=${PAGE_SIZE}&offset=${offset}`);
   } catch (e) {
-    if (e instanceof HttpError && e.status === 404) throw new ApiError(`A prova de ${year} não foi encontrada na API.`);
+    if (e instanceof Error && e.message.includes('404')) throw new ApiError(`A prova de ${year} não foi encontrada na API.`);
     throw new ApiError(e instanceof Error ? e.message : 'Erro ao acessar a API.');
   }
   if (!data || !Array.isArray(data.questions) || !data.metadata) {

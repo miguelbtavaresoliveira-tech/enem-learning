@@ -26,7 +26,7 @@ async function rawFetch(base: string, path: string): Promise<Response> {
   return fetch(`${base}${path}`);
 }
 
-async function apiFetch<T>(path: string): Promise<T> {
+export async function apiFetch<T>(path: string): Promise<T> {
   await waitForSlot();
 
   let primaryRes: Response | null = null;
