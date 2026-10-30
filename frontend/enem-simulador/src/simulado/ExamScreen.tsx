@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import type { SimuladoConfig, SimuladoSession, Question, Letter } from './types';
 import { DISCIPLINE_COLORS, DISCIPLINE_LABELS } from './types';
 import { NavTextBtn, ProgressBar } from './ui';
 import { loadSimuladoQuestions } from './api';
-import { QuestionStatement, AlternativeBody } from './QuestionContent';
+import { QuestionContent } from './QuestionContent';
 import { saveSession, getSeenIds } from './storage';
 
 // MD3 tokens
@@ -38,6 +38,7 @@ interface Props {
   onBack: () => void;
 }
 
+
 /* ---- Answer card ---- */
 function AnswerCard({
   session,
@@ -57,10 +58,10 @@ function AnswerCard({
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.01em' }}>
-          Cartão-Resposta
+          CartÃ£o-Resposta
         </span>
         {onClose && (
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: C.onSurfaceVariant, cursor: 'pointer', lineHeight: 1 }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: C.onSurfaceVariant, cursor: 'pointer', lineHeight: 1 }}>Ã—</button>
         )}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
@@ -105,12 +106,12 @@ function AnswerCard({
         })}
       </div>
       <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 11, color: C.onSurfaceVariant }}>
-        <span>○ Sem resposta</span>
-        <span style={{ color: C.primary }}>● Respondida</span>
+        <span>â—‹ Sem resposta</span>
+        <span style={{ color: C.primary }}>â— Respondida</span>
         {revealMode === 'immediate' && (
           <>
-            <span style={{ color: C.secondary }}>● Certa</span>
-            <span style={{ color: C.error }}>● Errada</span>
+            <span style={{ color: C.secondary }}>â— Certa</span>
+            <span style={{ color: C.error }}>â— Errada</span>
           </>
         )}
       </div>
@@ -121,9 +122,8 @@ function AnswerCard({
 export function ExamScreen({ config, onFinish, onBack }: Props) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [retryKey, setRetryKey] = useState(0);
-  const [loadProgress, setLoadProgress] = useState({ done: 0, total: 1 });
-  const startedKeyRef = useRef<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [loadProgress, setLoadProgress] = useState({ done: 0, total: 0 });
   const [session, setSession] = useState<SimuladoSession | null>(null);
   const [current, setCurrent] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -132,6 +132,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   const timerRef = useRef<number | null>(null);
   const sessionRef = useRef<SimuladoSession | null>(null);
   const finishedRef = useRef(false);
+  const initGuard = useRef(false);
 
   // Timer starts only when exam is ready (T-12)
   useEffect(() => {
@@ -141,17 +142,22 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   }, [phase]);
 
   useEffect(() => {
-    // StrictMode runs effects twice in dev; a second run would double the API calls.
-    if (startedKeyRef.current === retryKey) return;
-    startedKeyRef.current = retryKey;
+    // Guard against StrictMode double-invoke
+    if (initGuard.current) return;
+    initGuard.current = true;
+
+    let cancelled = false;
 
     async function init() {
       setPhase('loading');
-      setLoadProgress({ done: 0, total: 1 });
+      setLoadProgress({ done: 0, total: 0 });
       try {
         const seenIds = config.onlyNew ? getSeenIds() : new Set<string>();
-        const questions = await loadSimuladoQuestions(config, seenIds, (done, total) => setLoadProgress({ done, total }));
-        if (questions.length === 0) throw new Error('Nenhuma questão encontrada com esses filtros.');
+        const questions = await loadSimuladoQuestions(config, seenIds, (done, total) => {
+          if (!cancelled) setLoadProgress({ done, total });
+        });
+        if (cancelled) return;
+        if (questions.length === 0) throw new Error('Nenhuma questÃ£o encontrada com esses filtros.');
 
         const loadedQuestions: Record<string, Question> = {};
         for (const q of questions) loadedQuestions[q.id] = q;
@@ -173,11 +179,14 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
         setSession(sess);
         setPhase('exam');
       } catch (e) {
-        setErrorMsg(e instanceof Error ? e.message : 'Erro ao carregar questões.');
-        setPhase('error');
+        if (!cancelled) {
+          setErrorMsg(e instanceof Error ? e.message : 'Erro ao carregar questÃµes.');
+          setPhase('error');
+        }
       }
     }
     init();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryKey]);
 
@@ -209,8 +218,10 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') navigate(current + 1);
       if (e.key === 'ArrowLeft') navigate(current - 1);
-      // T-11: block letter keys after answer is revealed
+      // Block letter keys after gabarito is revealed
       if (revealed[currentId]) return;
+      // Also block when answer already set in immediate mode and revealed
+      if (config.revealMode === 'immediate' && session?.answers[currentId] && revealed[currentId]) return;
       const letters: Letter[] = ['A', 'B', 'C', 'D', 'E'];
       const idx = letters.indexOf(e.key.toUpperCase() as Letter);
       if (idx >= 0 && currentQ && currentQ.alternatives[idx]) answer(letters[idx]);
@@ -236,13 +247,17 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   });
 
   if (phase === 'loading') {
+    const pct = loadProgress.total > 0 ? Math.round((loadProgress.done / loadProgress.total) * 100) : 0;
+    const label = loadProgress.total > 0
+      ? `Baixando questÃµesâ€¦ ${loadProgress.done}/${loadProgress.total}`
+      : 'Preparando questÃµesâ€¦';
     return (
       <div style={{ minHeight: '100dvh', background: C.surface, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24 }}>
-        <div style={{ fontSize: 17, color: C.onSurface, fontWeight: 500 }}>Baixando questões da API oficial do ENEM…</div>
+        <div style={{ fontSize: 17, color: C.onSurface, fontWeight: 500 }}>{label}</div>
         <div style={{ width: '100%', maxWidth: 320 }}>
-          <ProgressBar value={loadProgress.total > 0 ? (loadProgress.done / loadProgress.total) * 100 : 0} color={C.primaryContainer} />
+          <ProgressBar value={pct} color={C.primaryContainer} />
         </div>
-        <div style={{ fontSize: 14, color: C.onSurfaceVariant }}>{loadProgress.done} / {loadProgress.total} requisições</div>
+        <div style={{ fontSize: 14, color: C.onSurfaceVariant }}>{loadProgress.done} / {loadProgress.total} requisiÃ§Ãµes</div>
       </div>
     );
   }
@@ -253,7 +268,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
         <div style={{ fontSize: 17, color: C.error, textAlign: 'center' }}>{errorMsg}</div>
         <div style={{ display: 'flex', gap: 12 }}>
           <button onClick={onBack} style={{ color: C.onSurfaceVariant, background: 'none', border: `1px solid ${C.outlineVariant}`, borderRadius: 8, padding: '10px 20px', fontSize: 15, cursor: 'pointer' }}>Voltar</button>
-          <button onClick={() => { finishedRef.current = false; setErrorMsg(''); setRetryKey(k => k + 1); }}
+          <button onClick={() => { finishedRef.current = false; initGuard.current = false; setErrorMsg(''); setRetryKey(k => k + 1); }}
             style={{ color: C.onPrimary, background: C.primaryContainer, border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
             Tentar novamente
           </button>
@@ -280,9 +295,9 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 16px', flexShrink: 0,
       }}>
-        <NavTextBtn label="← Sair da sessão" onClick={onBack} />
+        <NavTextBtn label="â† Sair da sessÃ£o" onClick={onBack} />
         <span style={{ fontSize: 15, fontWeight: 600, color: C.onSurface }}>
-          Questão {current + 1} de {totalQ}
+          QuestÃ£o {current + 1} de {totalQ}
         </span>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6,
@@ -290,7 +305,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
           padding: '4px 12px', fontSize: 14, fontWeight: 500,
           color: config.timerEnabled && remaining < 60 ? C.error : C.onSurfaceVariant,
         }}>
-          🕐 {timeStr}
+          ðŸ• {timeStr}
         </div>
       </header>
 
@@ -312,14 +327,12 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
                 <span style={{ fontSize: 13, fontWeight: 500, color: C.onSurfaceVariant }}>
                   {DISCIPLINE_LABELS[currentRef.discipline]}
                 </span>
-                <span style={{ fontSize: 12, color: C.outline }}>· ENEM {currentRef.year} · Q{currentRef.index}</span>
+                <span style={{ fontSize: 12, color: C.outline }}>Â· ENEM {currentRef.year} Â· Q{currentRef.index}</span>
               </div>
             )}
 
-            {!currentQ ? (
-              <div style={{ textAlign: 'center', padding: 40, color: C.onSurfaceVariant }}>Carregando questão…</div>
-            ) : (
-              <QuestionCard
+            {currentQ && (
+              <QuestionContent
                 question={currentQ}
                 selected={session.answers[currentId]}
                 revealed={config.revealMode === 'immediate' ? revealed[currentId] : false}
@@ -350,7 +363,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
         boxShadow: '0 4px 12px rgba(0,55,176,0.3)',
       }}>
         <style>{`@media (min-width: 768px) { .exam-fab { display: none !important; } }`}</style>
-        📋 {answered}/{totalQ}
+        ðŸ“‹ {answered}/{totalQ}
       </button>
 
       {/* Mobile bottom sheet */}
@@ -385,14 +398,14 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
           background: C.surfaceLowest,
           color: current === 0 ? C.outline : C.onSurface,
           fontSize: 15, fontWeight: 500, cursor: current === 0 ? 'not-allowed' : 'pointer',
-        }}>← Anterior</button>
+        }}>â† Anterior</button>
 
         {current < totalQ - 1 ? (
           <button onClick={() => navigate(current + 1)} style={{
             flex: 1, padding: '12px 0', borderRadius: 8, border: 'none',
             background: C.primaryContainer, color: C.onPrimary,
             fontSize: 15, fontWeight: 600, cursor: 'pointer',
-          }}>Próxima →</button>
+          }}>PrÃ³xima â†’</button>
         ) : (
           <button onClick={handleFinish} style={{
             flex: 1, padding: '12px 0', borderRadius: 8, border: 'none',
@@ -405,53 +418,4 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   );
 }
 
-function QuestionCard({ question, selected, revealed, onAnswer }: {
-  question: Question; selected: Letter | undefined; revealed: boolean; onAnswer: (l: Letter) => void;
-}) {
-  return (
-    <div>
-      <QuestionStatement question={question} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {question.alternatives.map(alt => {
-          const isSelected = selected === alt.letter;
-          const isCorrect = alt.isCorrect;
-          let bg = C.surfaceLowest;
-          let border = `1px solid ${C.outlineVariant}`;
-          let color = C.onSurface;
-          let badgeBg = C.surfaceContainerHigh;
-          let badgeColor = C.onSurfaceVariant;
 
-          if (revealed) {
-            if (isCorrect) {
-              bg = 'rgba(146,245,164,0.2)'; border = `2px solid ${C.secondary}`; color = '#004d22';
-              badgeBg = C.secondary; badgeColor = C.onSecondary;
-            } else if (isSelected) {
-              bg = 'rgba(255,218,214,0.4)'; border = `2px solid ${C.error}`; color = C.error;
-              badgeBg = C.error; badgeColor = C.onError;
-            }
-          } else if (isSelected) {
-            bg = 'rgba(220,225,255,0.4)'; border = `2px solid ${C.primaryContainer}`; color = C.primary;
-            badgeBg = C.primaryContainer; badgeColor = C.onPrimary;
-          }
-
-          return (
-            <button key={alt.letter} onClick={() => !revealed && onAnswer(alt.letter)} style={{
-              display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 16px',
-              background: bg, border, borderRadius: 8,
-              cursor: revealed ? 'default' : 'pointer',
-              textAlign: 'left', color, transition: 'all 0.12s', width: '100%',
-            }}>
-              <span style={{
-                flexShrink: 0, width: 26, height: 26, borderRadius: 4,
-                background: badgeBg, color: badgeColor,
-                fontSize: 13, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>{alt.letter}</span>
-              <AlternativeBody alt={alt} />
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
