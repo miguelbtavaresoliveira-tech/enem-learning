@@ -1,7 +1,63 @@
-import ReactMarkdown, { type Components } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
+import type { CSSProperties, ReactNode } from 'react';
 import type { Question, Letter } from './types';
+
+/** Normalize raw HTML img tags to markdown ![](url) format */
+function normalizeImgHtml(text: string): string {
+  return text.replace(/<img\s[^>]*src=["']([^"']+)["'][^>]*\/?>/gi, (_m, src) => `![](${src})`);
+}
+
+/** Render a markdown string as React nodes — handles images, paragraphs, bold, italic */
+function renderMd(text: string, imgStyle?: CSSProperties): ReactNode[] {
+  const normalized = normalizeImgHtml(text);
+  // Split into blocks (double newline = paragraph break)
+  const blocks = normalized.split(/\n{2,}/);
+  return blocks.map((block, bi) => {
+    const trimmed = block.trim();
+    if (!trimmed) return null;
+    // Image-only block
+    const imgMatch = trimmed.match(/^!\[(.*?)\]\((https?:\/\/[^)]+)\)$/);
+    if (imgMatch) {
+      const [, alt, src] = imgMatch;
+      return (
+        <a key={bi} href={src} target="_blank" rel="noopener noreferrer"
+          style={{ display: 'block', marginBlock: 8 }}>
+          <img src={src} alt={alt || 'Imagem da questão'}
+            style={{ maxWidth: '100%', borderRadius: 6, display: 'block', ...imgStyle }} loading="lazy" />
+        </a>
+      );
+    }
+    // Text block — handle inline images, bold, italic inside
+    const nodes = inlineMd(trimmed, bi);
+    return <div key={bi} style={{ margin: '0 0 8px', lineHeight: 1.75 }}>{nodes}</div>;
+  }).filter(Boolean) as React.ReactNode[];
+}
+
+/** Parse inline markdown: images, bold, italic */
+function inlineMd(text: string, baseKey: number): ReactNode[] {
+  const pattern = /!\[(.*?)\]\((https?:\/\/[^)]+)\)|\*\*(.*?)\*\*|__(.*?)__|_(.*?)_|\*(.*?)\*/g;
+  const nodes: React.ReactNode[] = [];
+  let last = 0, m: RegExpExecArray | null, i = 0;
+  while ((m = pattern.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
+    if (m[1] !== undefined || m[2] !== undefined) {
+      // image
+      const src = m[2]; const alt = m[1];
+      if (src) nodes.push(
+        <a key={`${baseKey}-i${i}`} href={src} target="_blank" rel="noopener noreferrer"
+          style={{ display: 'inline-block', marginBlock: 4 }}>
+          <img src={src} alt={alt || ''} loading="lazy"
+            style={{ maxWidth: '100%', borderRadius: 6, display: 'block' }} />
+        </a>
+      );
+    } else if (m[3] !== undefined) nodes.push(<strong key={`${baseKey}-b${i}`}>{m[3]}</strong>);
+    else if (m[4] !== undefined) nodes.push(<strong key={`${baseKey}-b${i}`}>{m[4]}</strong>);
+    else if (m[5] !== undefined) nodes.push(<em key={`${baseKey}-e${i}`}>{m[5]}</em>);
+    else if (m[6] !== undefined) nodes.push(<em key={`${baseKey}-e${i}`}>{m[6]}</em>);
+    last = m.index + m[0].length; i++;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
 
 // MD3 tokens (subset used here)
 const C = {
@@ -25,31 +81,6 @@ const C = {
   outline: '#747686',
 };
 
-// Shared markdown renderer — images clickable, tables scrollable
-const mdComponents: Components = {
-  img: (props) => {
-    const src = typeof props.src === 'string' ? props.src : undefined;
-    if (!src) return null;
-    return (
-      <a href={src} target="_blank" rel="noopener noreferrer" title="Clique para abrir em tamanho original"
-        style={{ display: 'block', marginBlock: 8 }}>
-        <img src={src} alt={props.alt ?? 'Imagem da questão'} loading="lazy"
-          style={{ maxWidth: '100%', borderRadius: 6, display: 'block' }} />
-      </a>
-    );
-  },
-  table: ({ children }) => (
-    <div style={{ overflowX: 'auto', marginBlock: 8 }}>
-      <table style={{ borderCollapse: 'collapse', fontSize: 14 }}>{children}</table>
-    </div>
-  ),
-  blockquote: ({ children }) => (
-    <blockquote style={{ borderLeft: `3px solid ${C.outlineVariant}`, paddingLeft: 12, margin: '8px 0', color: C.onSurfaceVariant }}>
-      {children}
-    </blockquote>
-  ),
-  p: ({ children }) => <p style={{ margin: '0 0 8px', lineHeight: 1.75 }}>{children}</p>,
-};
 
 interface QuestionContentProps {
   question: Question;
@@ -83,7 +114,7 @@ export function QuestionContent({ question, selected, revealed = false, onAnswer
           fontSize: 16, lineHeight: 1.75, color: C.onSurface,
           border: `1px solid ${C.outlineVariant}`,
         }}>
-          <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{question.context}</ReactMarkdown>
+          {renderMd(question.context)}
         </div>
       )}
 
@@ -97,7 +128,7 @@ export function QuestionContent({ question, selected, revealed = false, onAnswer
       {/* Command (alternativesIntroduction) with markdown */}
       {question.alternativesIntroduction && (
         <div style={{ fontSize: 15, color: C.onSurface, marginBottom: 12, fontWeight: 500, lineHeight: 1.65 }}>
-          <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{question.alternativesIntroduction}</ReactMarkdown>
+          {renderMd(question.alternativesIntroduction)}
         </div>
       )}
 
@@ -146,7 +177,7 @@ export function QuestionContent({ question, selected, revealed = false, onAnswer
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>{alt.letter}</span>
               <div style={{ fontSize: 15, lineHeight: 1.6, paddingTop: 3 }}>
-                {alt.text && <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{alt.text}</ReactMarkdown>}
+                {alt.text && renderMd(alt.text)}
                 {alt.file && (
                   <a href={alt.file} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 6 }}>
                     <img src={alt.file} alt={`Alternativa ${alt.letter}`} style={{ maxWidth: '100%', borderRadius: 6 }} />
