@@ -146,18 +146,15 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
     if (initGuard.current) return;
     initGuard.current = true;
 
-    let cancelled = false;
-
     async function init() {
       setPhase('loading');
       setLoadProgress({ done: 0, total: 0 });
       try {
         const seenIds = config.onlyNew ? getSeenIds() : new Set<string>();
         const questions = await loadSimuladoQuestions(config, seenIds, (done, total) => {
-          if (!cancelled) setLoadProgress({ done, total });
+          setLoadProgress({ done, total });
         });
-        if (cancelled) return;
-        if (questions.length === 0) throw new Error('Nenhuma questÃ£o encontrada com esses filtros.');
+        if (questions.length === 0) throw new Error('Nenhuma questão encontrada com esses filtros.');
 
         const loadedQuestions: Record<string, Question> = {};
         for (const q of questions) loadedQuestions[q.id] = q;
@@ -179,14 +176,11 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
         setSession(sess);
         setPhase('exam');
       } catch (e) {
-        if (!cancelled) {
-          setErrorMsg(e instanceof Error ? e.message : 'Erro ao carregar questÃµes.');
-          setPhase('error');
-        }
+        setErrorMsg(e instanceof Error ? e.message : 'Erro ao carregar questões.');
+        setPhase('error');
       }
     }
     init();
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryKey]);
 
@@ -249,15 +243,15 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
   if (phase === 'loading') {
     const pct = loadProgress.total > 0 ? Math.round((loadProgress.done / loadProgress.total) * 100) : 0;
     const label = loadProgress.total > 0
-      ? `Baixando questÃµesâ€¦ ${loadProgress.done}/${loadProgress.total}`
-      : 'Preparando questÃµesâ€¦';
+      ? `Baixando questões… ${loadProgress.done}/${loadProgress.total}`
+      : 'Preparando questões…';
     return (
       <div style={{ minHeight: '100dvh', background: C.surface, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24 }}>
         <div style={{ fontSize: 17, color: C.onSurface, fontWeight: 500 }}>{label}</div>
         <div style={{ width: '100%', maxWidth: 320 }}>
           <ProgressBar value={pct} color={C.primaryContainer} />
         </div>
-        <div style={{ fontSize: 14, color: C.onSurfaceVariant }}>{loadProgress.done} / {loadProgress.total} requisiÃ§Ãµes</div>
+        <div style={{ fontSize: 14, color: C.onSurfaceVariant }}>{loadProgress.done} / {loadProgress.total} requisições</div>
       </div>
     );
   }
