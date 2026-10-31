@@ -58,10 +58,10 @@ function AnswerCard({
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.01em' }}>
-          CartÃ£o-Resposta
+          Cartão-Resposta
         </span>
         {onClose && (
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: C.onSurfaceVariant, cursor: 'pointer', lineHeight: 1 }}>Ã—</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: C.onSurfaceVariant, cursor: 'pointer', lineHeight: 1 }}>×</button>
         )}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
@@ -106,7 +106,7 @@ function AnswerCard({
         })}
       </div>
       <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 11, color: C.onSurfaceVariant }}>
-        <span>â—‹ Sem resposta</span>
+        <span>○ Sem resposta</span>
         <span style={{ color: C.primary }}>â— Respondida</span>
         {revealMode === 'immediate' && (
           <>
@@ -289,9 +289,9 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 16px', flexShrink: 0,
       }}>
-        <NavTextBtn label="â† Sair da sessÃ£o" onClick={onBack} />
+        <NavTextBtn label="â† Sair da sessão" onClick={onBack} />
         <span style={{ fontSize: 15, fontWeight: 600, color: C.onSurface }}>
-          QuestÃ£o {current + 1} de {totalQ}
+          Questão {current + 1} de {totalQ}
         </span>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6,
@@ -299,7 +299,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
           padding: '4px 12px', fontSize: 14, fontWeight: 500,
           color: config.timerEnabled && remaining < 60 ? C.error : C.onSurfaceVariant,
         }}>
-          ðŸ• {timeStr}
+          ⏱ {timeStr}
         </div>
       </header>
 
@@ -321,7 +321,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
                 <span style={{ fontSize: 13, fontWeight: 500, color: C.onSurfaceVariant }}>
                   {DISCIPLINE_LABELS[currentRef.discipline]}
                 </span>
-                <span style={{ fontSize: 12, color: C.outline }}>Â· ENEM {currentRef.year} Â· Q{currentRef.index}</span>
+                <span style={{ fontSize: 12, color: C.outline }}>· ENEM {currentRef.year} · Q{currentRef.index}</span>
               </div>
             )}
 
@@ -357,7 +357,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
         boxShadow: '0 4px 12px rgba(0,55,176,0.3)',
       }}>
         <style>{`@media (min-width: 768px) { .exam-fab { display: none !important; } }`}</style>
-        ðŸ“‹ {answered}/{totalQ}
+        📋 {answered}/{totalQ}
       </button>
 
       {/* Mobile bottom sheet */}
@@ -399,7 +399,7 @@ export function ExamScreen({ config, onFinish, onBack }: Props) {
             flex: 1, padding: '12px 0', borderRadius: 8, border: 'none',
             background: C.primaryContainer, color: C.onPrimary,
             fontSize: 15, fontWeight: 600, cursor: 'pointer',
-          }}>PrÃ³xima â†’</button>
+          }}>Próxima →</button>
         ) : (
           <button onClick={handleFinish} style={{
             flex: 1, padding: '12px 0', borderRadius: 8, border: 'none',

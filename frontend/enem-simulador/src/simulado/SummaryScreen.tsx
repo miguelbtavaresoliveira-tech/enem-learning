@@ -11,8 +11,8 @@ function previewText(w: WrongAnswer): string {
     .replace(/[*_#>`]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!plain) return 'QuestÃ£o com imagem â€” toque para ver completa';
-  return plain.length > 120 ? `${plain.slice(0, 120)}â€¦` : plain;
+  if (!plain) return 'Questão com imagem — toque para ver completa';
+  return plain.length > 120 ? `${plain.slice(0, 120)}…` : plain;
 }
 
 // MD3 tokens
@@ -76,9 +76,9 @@ function makePrompt(w: WrongItem, n: number): string {
   const altsText = w.alternatives
     .map(a => `${a.letter}) ${a.text ?? '[imagem]'}`)
     .join('\n');
-  const imageNote = w.hasImage ? '\n(Esta questÃ£o contÃ©m figura â€” a imagem nÃ£o estÃ¡ disponÃ­vel neste texto.)' : '';
+  const imageNote = w.hasImage ? '\n(Esta questão contém figura — a imagem não está disponível neste texto.)' : '';
 
-  return `=== QuestÃ£o ${n} â€” ENEM ${w.year}, Q${w.index} â€” ${disc} ===
+  return `=== Questão ${n} — ENEM ${w.year}, Q${w.index} — ${disc} ===
 Texto-base: ${stripImages(w.context) || '(sem texto-base)'}
 Comando: ${stripImages(w.alternativesIntroduction) || w.title}${imageNote}
 Alternativas:
@@ -91,16 +91,16 @@ Resposta correta: ${w.correct}`;
 function buildStudyPrompt(items: WrongItem[]): string {
   if (!items.length) return '';
 
-  const header = `Sou estudante e fiz um simulado do ENEM. Errei ou deixei em branco as questÃµes abaixo.
+  const header = `Sou estudante e fiz um simulado do ENEM. Errei ou deixei em branco as questões abaixo.
 
-Para CADA questÃ£o:
-1. Diga qual conteÃºdo/assunto do ENEM ela cobra.
-2. Explique por que a alternativa correta estÃ¡ certa e por que a minha estÃ¡ errada (ou por que eu deveria saber respondÃª-la).
+Para CADA questão:
+1. Diga qual conteúdo/assunto do ENEM ela cobra.
+2. Explique por que a alternativa correta está certa e por que a minha está errada (ou por que eu deveria saber respondê-la).
 
 Depois, monte um PLANO DE ESTUDO:
-- Liste os conteÃºdos agrupados por Ã¡rea, do mais urgente ao menos urgente.
-- Distribua em um cronograma de 14 dias (1â€“2 h por dia), com o que estudar e que tipo de exercÃ­cio fazer.
-- Termine com 3 dicas de estratÃ©gia de prova para essas Ã¡reas.
+- Liste os conteúdos agrupados por área, do mais urgente ao menos urgente.
+- Distribua em um cronograma de 14 dias (1–2 h por dia), com o que estudar e que tipo de exercício fazer.
+- Termine com 3 dicas de estratégia de prova para essas áreas.
 
 `;
 
@@ -167,19 +167,19 @@ function WrongAnswerModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 4, height: 18, borderRadius: 2, background: discColor }} />
             <span style={{ fontSize: 14, fontWeight: 600, color: discColor }}>{discLabel}</span>
-            <span style={{ fontSize: 13, color: C.outline }}>Â· ENEM {w.year} Â· Q{w.index}</span>
+            <span style={{ fontSize: 13, color: C.outline }}>· ENEM {w.year} · Q{w.index}</span>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <button onClick={handleCopy} style={{
               background: 'none', border: `1px solid ${C.outlineVariant}`, borderRadius: 6,
               padding: '4px 10px', color: C.primary, fontSize: 13, fontWeight: 500, cursor: 'pointer',
             }}>
-              {copied ? 'âœ“ Copiado' : 'ðŸ“‹ Copiar prompt de estudo'}
+              {copied ? '✓ Copiado' : '📋 Copiar prompt de estudo'}
             </button>
             <button onClick={onClose} style={{
               background: 'none', border: 'none', fontSize: 22, lineHeight: 1,
               color: C.onSurfaceVariant, cursor: 'pointer',
-            }}>Ã—</button>
+            }}>×</button>
           </div>
         </div>
 
@@ -197,7 +197,7 @@ function WrongAnswerModal({
 
           {!q ? (
             <div style={{ color: C.onSurfaceVariant, padding: 24, textAlign: 'center' }}>
-              QuestÃ£o nÃ£o carregada durante o simulado.
+              Questão não carregada durante o simulado.
             </div>
           ) : (
             <QuestionContent
@@ -228,7 +228,7 @@ function WrongAnswerModal({
             background: idx === wrongs.length - 1 ? C.outlineVariant : C.primaryContainer,
             color: C.onPrimary, fontSize: 14, fontWeight: 600,
             cursor: idx === wrongs.length - 1 ? 'not-allowed' : 'pointer',
-          }}>PrÃ³xima â†’</button>
+          }}>Próxima →</button>
         </div>
       </div>
     </>
@@ -272,7 +272,7 @@ export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
     <div style={{ minHeight: '100dvh', background: C.surface }}>
       <TopNav
         title="Resultado"
-        right={<button onClick={onHistory} style={{ background: 'none', border: 'none', color: C.primary, fontSize: 16, cursor: 'pointer', fontWeight: 500 }}>HistÃ³rico</button>}
+        right={<button onClick={onHistory} style={{ background: 'none', border: 'none', color: C.primary, fontSize: 16, cursor: 'pointer', fontWeight: 500 }}>Histórico</button>}
       />
 
       <div style={{ padding: '24px 16px 48px', maxWidth: 640, margin: '0 auto' }}>
@@ -282,7 +282,7 @@ export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
           <ScoreRing pct={pct} size={90} />
           <div>
             <div style={{ fontSize: 28, fontWeight: 700, color: scoreColor, letterSpacing: '-0.02em' }}>{result.correct} / {result.totalQuestions}</div>
-            <div style={{ fontSize: 15, color: C.onSurfaceVariant, marginTop: 4 }}>acertos Â· {timeStr}</div>
+            <div style={{ fontSize: 15, color: C.onSurfaceVariant, marginTop: 4 }}>acertos · {timeStr}</div>
             <div style={{ fontSize: 13, color: C.outline, marginTop: 4 }}>
               {new Date(result.startedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
             </div>
@@ -312,12 +312,12 @@ export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
         {result.wrongAnswers.length > 0 && (
           <div style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <span style={{ fontSize: 16, fontWeight: 600, color: C.onSurface }}>QuestÃµes a revisar ({result.wrongAnswers.length})</span>
+              <span style={{ fontSize: 16, fontWeight: 600, color: C.onSurface }}>Questões a revisar ({result.wrongAnswers.length})</span>
               <button onClick={copyAllPrompt} style={{
                 background: 'none', border: `1px solid ${C.outlineVariant}`, borderRadius: 6,
                 padding: '5px 12px', color: C.primary, fontSize: 13, fontWeight: 500, cursor: 'pointer',
               }}>
-                {copiedAll ? 'âœ“ Copiado' : 'ðŸ“‹ Copiar todos para IA'}
+                {copiedAll ? '✓ Copiado' : '📋 Copiar todos para IA'}
               </button>
             </div>
 
@@ -348,14 +348,14 @@ export function SummaryScreen({ session, onNewSimulado, onHistory }: Props) {
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                       >
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 12, color: C.outline, marginBottom: 2 }}>ENEM {w.year} Â· QuestÃ£o {w.index}</div>
+                          <div style={{ fontSize: 12, color: C.outline, marginBottom: 2 }}>ENEM {w.year} · Questão {w.index}</div>
                           <div style={{ fontSize: 14, color: C.onSurface, lineHeight: 1.4 }}>{previewText(w)}</div>
                           <div style={{ fontSize: 12, marginTop: 4, display: 'flex', gap: 10 }}>
                             <span style={{ color: C.error }}>{w.selected ? <>Marquei: <strong>{w.selected}</strong></> : <em>Em branco</em>}</span>
                             <span style={{ color: C.secondary }}>Correto: <strong>{w.correct}</strong></span>
                           </div>
                         </div>
-                        <span style={{ color: C.outline, fontSize: 20 }}>â€º</span>
+                        <span style={{ color: C.outline, fontSize: 20 }}>›</span>
                       </div>
                     );
                   })}
